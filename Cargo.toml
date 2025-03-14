@@ -1,0 +1,13 @@
+[package]
+name = "smashbit"
+version = "0.1.0"
+edition = "2024"
+
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0"
+pollster = "0.4"
+rapier3d = "0.23"
+wgpu = "24.0"
+winit = "0.30"
