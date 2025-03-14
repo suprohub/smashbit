@@ -32,7 +32,7 @@ impl ApplicationHandler for Game {
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &self.renderer {
                     renderer.window.request_redraw();
-                    
+
                     renderer.render().unwrap();
                 }
             }

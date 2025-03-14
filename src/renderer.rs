@@ -9,6 +9,7 @@ pub struct Renderer {
     surface_config: wgpu::SurfaceConfiguration,
     device: wgpu::Device,
     queue: wgpu::Queue,
+    main_pipeline: wgpu::RenderPipeline,
 }
 
 impl Renderer {
@@ -72,6 +73,17 @@ impl Renderer {
 
         surface.configure(&device, &surface_config);
 
+        let main_shader = device.create_shader_module(wgpu::include_wgsl!("shaders/main.wgsl"));
+
+        let main_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Main Pipeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
+        
+
+
         Ok(Self {
             window,
             surface,
@@ -88,11 +100,15 @@ impl Renderer {
 
     pub fn render(&self) -> Result<()> {
         let frame = self.surface.get_current_texture()?;
-        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
 
         {
             let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -115,7 +131,7 @@ impl Renderer {
                 timestamp_writes: None,
             });
         }
-    
+
         // submit will accept anything that implements IntoIter
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
