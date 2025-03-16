@@ -4,7 +4,7 @@ pub mod texture;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceRaw {
-    model: [[f32; 4]; 4],
+    pub model: [[f32; 4]; 4],
 }
 
 impl InstanceRaw {

@@ -6,13 +6,13 @@ use super::InstanceRaw;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct TexturedVertex {
-    position: [f32; 3],
-    tex_coords: [f32; 2],
+pub struct TexturedVertex {
+    pub position: [f32; 3],
+    pub tex_coords: [f32; 2],
 }
 
 impl TexturedVertex {
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<TexturedVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -32,44 +32,25 @@ impl TexturedVertex {
     }
 }
 
-const TEXTURED_VERTICES: &[TexturedVertex] = &[
-    TexturedVertex {
-        position: [-0.3, -0.3, 0.0],
-        tex_coords: [0.0, 0.0],
-    },
-    TexturedVertex {
-        position: [0.3, -0.3, 0.0],
-        tex_coords: [1.0, 0.0],
-    },
-    TexturedVertex {
-        position: [0.3, 0.3, 0.0],
-        tex_coords: [1.0, 1.0],
-    },
-    TexturedVertex {
-        position: [-0.3, 0.3, 0.0],
-        tex_coords: [0.0, 1.0],
-    },
-];
-
-const TEXTURED_INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
+pub struct TextureMesh {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    index_count: u32,
+    instance_buffer: wgpu::Buffer,
+    instances_len: u32,
+    bind_group: wgpu::BindGroup, // unused here
+}
 
 pub struct TexturePipeline {
     pipeline: wgpu::RenderPipeline,
-
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-
-    instance_buffer: wgpu::Buffer,
-    instances_len: u32,
-
-    bind_group: wgpu::BindGroup,
+    bind_group_layout: wgpu::BindGroupLayout,
+    meshes: Vec<TextureMesh>,
 }
 
 impl TexturePipeline {
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-        texture: &texture::Texture,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -146,33 +127,41 @@ impl TexturePipeline {
             cache: None,
         });
 
-        let instances = vec![
-            InstanceRaw {
-                model: glam::Mat4::IDENTITY.to_cols_array_2d(),
-            };
-            10
-        ];
+        Self {
+            pipeline,
+            bind_group_layout,
+            meshes: Vec::new(),
+        }
+    }
 
+    pub fn add_mesh(
+        &mut self,
+        device: &wgpu::Device,
+        texture: &texture::Texture,
+        vertices: &[TexturedVertex],
+        indices: &[u16],
+        instances: &[InstanceRaw],
+    ) {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Texture Vertex Buffer"),
-            contents: bytemuck::cast_slice(TEXTURED_VERTICES),
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Texture Index Buffer"),
-            contents: bytemuck::cast_slice(TEXTURED_INDICES),
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(indices),
             usage: wgpu::BufferUsages::INDEX,
         });
 
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&instances),
-            usage: wgpu::BufferUsages::VERTEX,
+            contents: bytemuck::cast_slice(instances),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &bind_group_layout,
+            layout: &self.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -186,14 +175,14 @@ impl TexturePipeline {
             label: Some("texture_bind_group"),
         });
 
-        Self {
-            pipeline,
+        self.meshes.push(TextureMesh {
             vertex_buffer,
             index_buffer,
+            index_count: indices.len() as u32,
             instance_buffer,
             instances_len: instances.len() as u32,
             bind_group,
-        }
+        });
     }
 
     pub fn begin_render_pass(
@@ -202,11 +191,14 @@ impl TexturePipeline {
         camera_bind_group: &wgpu::BindGroup,
     ) {
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.bind_group, &[]);
-        render_pass.set_bind_group(1, camera_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..TEXTURED_INDICES.len() as u32, 0, 0..self.instances_len);
+        render_pass.set_bind_group(0, camera_bind_group, &[]);
+
+        for mesh in &self.meshes {
+            render_pass.set_bind_group(1, &mesh.bind_group, &[]);
+            render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, mesh.instance_buffer.slice(..));
+            render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..mesh.index_count, 0, 0..mesh.instances_len);
+        }
     }
 }

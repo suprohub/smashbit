@@ -11,17 +11,17 @@ pub mod texture;
 pub struct Renderer {
     pub window: Arc<Window>,
 
-    surface: wgpu::Surface<'static>,
-    surface_config: wgpu::SurfaceConfiguration,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub surface: wgpu::Surface<'static>,
+    pub surface_config: wgpu::SurfaceConfiguration,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
 
-    depth_texture: texture::Texture,
+    pub depth_texture: texture::Texture,
 
     pub camera: Camera,
 
-    color_pipeline: ColorPipeline,
-    texture_pipeline: TexturePipeline,
+    pub color_pipeline: ColorPipeline,
+    pub texture_pipeline: TexturePipeline,
 }
 
 impl Renderer {
@@ -110,7 +110,6 @@ impl Renderer {
             texture_pipeline: TexturePipeline::new(
                 &device,
                 surface_format,
-                &texture,
                 &camera.bind_group_layout,
             ),
             depth_texture,
