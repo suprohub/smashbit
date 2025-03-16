@@ -98,13 +98,6 @@ impl Renderer {
 
         let camera = Camera::new(&device, size.width, size.height);
 
-        let texture = texture::Texture::from_bytes(
-            &device,
-            &queue,
-            include_bytes!("happy-tree.png"),
-            "Happy Tree",
-        )?;
-
         Ok(Self {
             color_pipeline: ColorPipeline::new(&device, surface_format, &camera.bind_group_layout),
             texture_pipeline: TexturePipeline::new(
