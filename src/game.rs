@@ -2,15 +2,13 @@ use crate::{
     camera_controller::CameraController,
     renderer::{
         Renderer,
-        pipeline::{InstanceRaw, color::ColoredVertex, texture::TexturedVertex},
-        texture,
+        pipeline::{InstanceRaw, color::ColoredVertex},
     },
 };
-use gltf::Gltf;
 use kira::{
     AudioManager, AudioManagerSettings, DefaultBackend, sound::static_sound::StaticSoundData,
 };
-use std::{collections::HashMap, fs, sync::Arc, time::Instant};
+use std::{sync::Arc, time::Instant};
 use winit::{
     application::ApplicationHandler,
     event::{DeviceEvent, MouseButton, WindowEvent},
@@ -87,136 +85,7 @@ impl ApplicationHandler for Game {
             &instances,
         );
 
-        let gltf = Gltf::from_slice(&fs::read("map.glb").unwrap()).unwrap();
-        let mut instances = HashMap::<String, Vec<InstanceRaw>>::new();
-        let mut textured_meshes =
-            HashMap::<String, (Vec<TexturedVertex>, Vec<u16>, Vec<u8>)>::new();
-        let mut colored_meshes = HashMap::<String, (Vec<ColoredVertex>, Vec<u16>, [f32; 4])>::new();
-
-        let blob = gltf.blob.clone().unwrap();
-
-        // Phase 1: Data collection
-        for node in gltf.nodes() {
-            if let Some(mesh) = node.mesh() {
-                let Some(name) = mesh.name() else { continue };
-
-                if let Some((base_name, _)) = name.split_once('.') {
-                    // Handle instances
-                    instances
-                        .entry(base_name.to_string())
-                        .or_default()
-                        .push(InstanceRaw {
-                            model: node.transform().matrix(),
-                        });
-                } else {
-                    // Handle meshes
-                    for primitive in mesh.primitives() {
-                        let reader = primitive.reader(|buffer| {
-                            if buffer.index() == 0 {
-                                Some(&blob)
-                            } else {
-                                None
-                            }
-                        });
-                        let Some(indices) = reader
-                            .read_indices()
-                            .map(|i| i.into_u32().map(|v| v as u16).collect::<Vec<_>>())
-                        else {
-                            continue;
-                        };
-                        let positions = reader.read_positions().unwrap().collect::<Vec<_>>();
-
-                        // Try to read texture data
-                        let mut texture_data = None;
-                        if let Some(tex_coords) = reader.read_tex_coords(0) {
-                            let tex_coords = tex_coords.into_f32().collect::<Vec<_>>();
-                            if let Some(texture_info) = primitive
-                                .material()
-                                .pbr_metallic_roughness()
-                                .base_color_texture()
-                            {
-                                if let gltf::image::Source::View { view, .. } =
-                                    texture_info.texture().source().source()
-                                {
-                                    texture_data = Some((
-                                        positions
-                                            .iter()
-                                            .zip(tex_coords.iter())
-                                            .map(|(pos, uv)| TexturedVertex {
-                                                position: *pos,
-                                                tex_coords: *uv,
-                                            })
-                                            .collect(),
-                                        indices.clone(),
-                                        blob[view.offset()..view.offset() + view.length()].to_vec(),
-                                    ));
-                                }
-                            }
-                        }
-
-                        if let Some((vertices, indices, image_data)) = texture_data {
-                            textured_meshes
-                                .insert(name.to_string(), (vertices, indices, image_data));
-                        } else {
-                            // Handle colored mesh
-                            let colors = reader
-                                .read_colors(0)
-                                .map(|c| c.into_rgba_f32().map(|v| [v[0], v[1], v[2]]).collect())
-                                .unwrap_or_else(|| {
-                                    let base = primitive
-                                        .material()
-                                        .pbr_metallic_roughness()
-                                        .base_color_factor();
-                                    vec![[base[0], base[1], base[2]]; positions.len()]
-                                });
-
-                            colored_meshes.insert(
-                                name.to_string(),
-                                (
-                                    positions
-                                        .iter()
-                                        .zip(colors.iter())
-                                        .map(|(pos, color)| ColoredVertex {
-                                            position: *pos,
-                                            color: *color,
-                                        })
-                                        .collect(),
-                                    indices,
-                                    primitive
-                                        .material()
-                                        .pbr_metallic_roughness()
-                                        .base_color_factor(),
-                                ),
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
-        // Phase 2: Resource creation and rendering
-        // Process textured meshes
-        for (name, (vertices, indices, image_data)) in textured_meshes {
-            let texture =
-                texture::Texture::from_bytes(&renderer.device, &renderer.queue, &image_data, &name)
-                    .unwrap();
-            let instances = instances.remove(name.as_str()).unwrap_or_default();
-            renderer.texture_pipeline.add_mesh(
-                &renderer.device,
-                &texture,
-                &vertices,
-                &indices,
-                &instances,
-            );
-        }
-
-        // Process colored meshes
-        for (name, (vertices, indices, base_color)) in colored_meshes {
-            let instances = instances.remove(name.as_str()).unwrap_or_default();
-            renderer
-                .color_pipeline
-                .add_mesh(&renderer.device, &vertices, &indices, &instances);
-        }
+        renderer.add_gltf("map.glb");
 
         self.renderer = Some(renderer);
         self.audio = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).ok();
