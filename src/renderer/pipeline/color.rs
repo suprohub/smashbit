@@ -2,6 +2,8 @@ use wgpu::util::DeviceExt;
 
 use crate::renderer::texture;
 
+use super::InstanceRaw;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct ColoredVertex {
@@ -60,6 +62,9 @@ pub struct ColorPipeline {
 
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+
+    instance_buffer: wgpu::Buffer,
+    instances_len: u32,
 }
 
 impl ColorPipeline {
@@ -82,7 +87,7 @@ impl ColorPipeline {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[ColoredVertex::desc()],
+                buffers: &[ColoredVertex::desc(), InstanceRaw::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -123,6 +128,13 @@ impl ColorPipeline {
             cache: None,
         });
 
+        let instances = vec![
+            InstanceRaw {
+                model: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            };
+            10
+        ];
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(VERTICES),
@@ -135,10 +147,18 @@ impl ColorPipeline {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(&instances),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
         Self {
             pipeline,
             vertex_buffer,
             index_buffer,
+            instance_buffer,
+            instances_len: instances.len() as u32,
         }
     }
 
@@ -150,7 +170,8 @@ impl ColorPipeline {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, camera_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
+        render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..self.instances_len);
     }
 }

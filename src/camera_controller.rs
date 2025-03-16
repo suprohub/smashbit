@@ -1,12 +1,12 @@
-
 use glam::Vec3;
 use winit::{
     dpi::PhysicalPosition,
-    event::{ElementState, MouseScrollDelta}, keyboard::KeyCode,
+    event::{ElementState, MouseScrollDelta},
+    keyboard::KeyCode,
 };
 
-use std::time::Duration;
 use std::f32::consts::FRAC_PI_2;
+use std::time::Duration;
 
 use crate::renderer::camera::Camera;
 
@@ -38,14 +38,36 @@ impl CameraController {
     }
 
     pub fn process_keyboard(&mut self, key: KeyCode, state: ElementState) -> bool {
-        let value = if state == ElementState::Pressed { 1.0 } else { 0.0 };
+        let value = if state == ElementState::Pressed {
+            1.0
+        } else {
+            0.0
+        };
         match key {
-            KeyCode::KeyW => { self.movement[2] = value; true }
-            KeyCode::KeyS => { self.movement[2] = -value; true }
-            KeyCode::KeyA => { self.movement[0] = -value; true }
-            KeyCode::KeyD => { self.movement[0] = value; true }
-            KeyCode::Space => { self.movement[1] = value; true }
-            KeyCode::ShiftLeft => { self.movement[1] = -value; true }
+            KeyCode::KeyW => {
+                self.movement[2] = value;
+                true
+            }
+            KeyCode::KeyS => {
+                self.movement[2] = -value;
+                true
+            }
+            KeyCode::KeyA => {
+                self.movement[0] = -value;
+                true
+            }
+            KeyCode::KeyD => {
+                self.movement[0] = value;
+                true
+            }
+            KeyCode::Space => {
+                self.movement[1] = value;
+                true
+            }
+            KeyCode::ShiftLeft => {
+                self.movement[1] = -value;
+                true
+            }
             _ => false,
         }
     }
@@ -69,7 +91,7 @@ impl CameraController {
         let (yaw_sin, yaw_cos) = camera.yaw.sin_cos();
         let forward = Vec3::new(yaw_cos, 0.0, yaw_sin);
         let right = Vec3::new(-yaw_sin, 0.0, yaw_cos);
-        
+
         camera.position += forward * self.movement[2] * self.speed * dt;
         camera.position += right * self.movement[0] * self.speed * dt;
         camera.position.y += self.movement[1] * self.speed * dt;
@@ -85,7 +107,7 @@ impl CameraController {
 
         // Reset rotation
         self.rotation = [0.0; 2];
-        
+
         camera.update_uniform();
     }
 }

@@ -1,6 +1,11 @@
-use std::{sync::Arc, time::Instant};
-use winit::{application::ApplicationHandler, event::{DeviceEvent, MouseButton, WindowEvent}, keyboard::PhysicalKey, window::WindowAttributes};
 use crate::{camera_controller::CameraController, renderer::Renderer};
+use std::{sync::Arc, time::Instant};
+use winit::{
+    application::ApplicationHandler,
+    event::{DeviceEvent, MouseButton, WindowEvent},
+    keyboard::PhysicalKey,
+    window::WindowAttributes,
+};
 
 pub struct Game {
     renderer: Option<Renderer>,
@@ -35,7 +40,7 @@ impl ApplicationHandler for Game {
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        window_id: winit::window::WindowId,
+        _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
         match event {
@@ -51,17 +56,19 @@ impl ApplicationHandler for Game {
                 if let Some(renderer) = &mut self.renderer {
                     let now = Instant::now();
                     let dt = now - self.last_frame;
-                    self.last_frame  = now;
+                    self.last_frame = now;
 
                     renderer.window.request_redraw();
 
                     renderer.render().unwrap();
-                    self.camera_controller.update_camera(&mut renderer.camera, dt);
+                    self.camera_controller
+                        .update_camera(&mut renderer.camera, dt);
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(keycode) = event.physical_key {
-                    self.camera_controller.process_keyboard(keycode, event.state);
+                    self.camera_controller
+                        .process_keyboard(keycode, event.state);
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
@@ -74,18 +81,15 @@ impl ApplicationHandler for Game {
     }
 
     fn device_event(
-            &mut self,
-            event_loop: &winit::event_loop::ActiveEventLoop,
-            device_id: winit::event::DeviceId,
-            event: winit::event::DeviceEvent,
-        ) {
-        match event {
-            DeviceEvent::MouseMotion { delta } => {
-                if self.mouse_left {
-                    self.camera_controller.process_mouse(delta);
-                }
-            },
-            _ => {}
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
+        if let DeviceEvent::MouseMotion { delta } = event {
+            if self.mouse_left {
+                self.camera_controller.process_mouse(delta);
+            }
         }
     }
 }

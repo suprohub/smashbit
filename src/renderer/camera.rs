@@ -7,6 +7,12 @@ pub struct CameraUniform {
     view_proj: [[f32; 4]; 4],
 }
 
+impl Default for CameraUniform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CameraUniform {
     pub fn new() -> Self {
         Self {
@@ -26,7 +32,7 @@ pub struct Camera {
     zfar: f32,
     uniform: CameraUniform,
     buffer: wgpu::Buffer,
-    
+
     pub bind_group: wgpu::BindGroup,
     pub bind_group_layout: wgpu::BindGroupLayout,
 }
@@ -95,11 +101,7 @@ impl Camera {
         let (sin_pitch, cos_pitch) = self.pitch.sin_cos();
         let (sin_yaw, cos_yaw) = self.yaw.sin_cos();
 
-        let dir = Vec3::new(
-            cos_pitch * cos_yaw,
-            sin_pitch,
-            cos_pitch * sin_yaw,
-        ).normalize();
+        let dir = Vec3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize();
 
         Mat4::look_to_rh(self.position, dir, Vec3::Y)
     }
