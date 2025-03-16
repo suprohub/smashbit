@@ -16,6 +16,8 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
 
+    depth_texture: texture::Texture,
+
     pub camera: Camera,
 
     color_pipeline: ColorPipeline,
@@ -87,13 +89,20 @@ impl Renderer {
 
         surface.configure(&device, &surface_config);
 
+        let depth_texture = texture::Texture::create_depth_texture(
+            &device,
+            size.width,
+            size.height,
+            "depth_texture",
+        );
+
         let camera = Camera::new(&device, size.width, size.height);
 
         let texture = texture::Texture::from_bytes(
             &device,
             &queue,
             include_bytes!("happy-tree.png"),
-            "texture",
+            "Happy Tree",
         )?;
 
         Ok(Self {
@@ -104,6 +113,7 @@ impl Renderer {
                 &texture,
                 &camera.bind_group_layout,
             ),
+            depth_texture,
             camera,
             window,
             surface,
@@ -118,6 +128,13 @@ impl Renderer {
         self.camera.resize(new_size.width, new_size.height);
         (self.surface_config.width, self.surface_config.height) = (new_size.width, new_size.height);
         self.surface.configure(&self.device, &self.surface_config);
+
+        self.depth_texture = texture::Texture::create_depth_texture(
+            &self.device,
+            new_size.width,
+            new_size.height,
+            "depth_texture",
+        );
     }
 
     pub fn render(&self) -> Result<()> {
@@ -148,7 +165,14 @@ impl Renderer {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
