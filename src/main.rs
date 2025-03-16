@@ -3,6 +3,7 @@ use game::Game;
 use log::Level;
 use winit::event_loop::EventLoop;
 
+pub mod camera_controller;
 pub mod game;
 pub mod renderer;
 
