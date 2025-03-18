@@ -1,7 +1,4 @@
-use crate::{
-    camera_controller::CameraController,
-    renderer::Renderer,
-};
+use crate::{camera_controller::CameraController, renderer::Renderer};
 use kira::{
     AudioManager, AudioManagerSettings, DefaultBackend, sound::static_sound::StaticSoundData,
 };
@@ -52,7 +49,7 @@ impl ApplicationHandler for Game {
 
         if let Some(audio) = &mut self.audio {
             audio
-                .play(StaticSoundData::from_file("assets/music/0.ogg").unwrap())
+                .play(StaticSoundData::from_file("assets/music/12.ogg").unwrap())
                 .unwrap();
         }
     }

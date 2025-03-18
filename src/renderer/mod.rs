@@ -223,13 +223,11 @@ impl Renderer {
             let Some(mesh) = node.mesh() else { continue };
             let Some(name) = mesh.name() else { continue };
 
-            // Вычисляем нормальную матрицу для узла
             let model_matrix =
                 Mat3::from_mat4(Mat4::from_cols_array_2d(&node.transform().matrix()));
             let normal_matrix = model_matrix.inverse().transpose();
 
             if let Some((base_name, _)) = name.split_once('.') {
-                // Обработка инстансов
                 instances
                     .entry(base_name.to_string())
                     .or_default()
@@ -240,7 +238,6 @@ impl Renderer {
                 continue;
             }
 
-            // Обработка мешей
             for primitive in mesh.primitives() {
                 let reader = primitive.reader(|buffer| {
                     if buffer.index() == 0 {
@@ -250,7 +247,6 @@ impl Renderer {
                     }
                 });
 
-                // Чтение основных данных
                 let indices: Vec<u16> = match reader
                     .read_indices()
                     .map(|i| i.into_u32().map(|v| v as u16))
@@ -266,7 +262,6 @@ impl Renderer {
                     continue;
                 }
 
-                // Обработка нормалей
                 let normals = match reader.read_normals() {
                     Some(n) => n.map(Vec3::from).collect(),
                     None => {
@@ -275,41 +270,46 @@ impl Renderer {
                     }
                 };
 
-                // Проверка текстурных координат
                 if let Some(tex_coords) = reader
                     .read_tex_coords(0)
                     .map(|t| t.into_f32().map(Vec2::from).collect::<Vec<_>>())
                 {
+                    log::info!("Finded texture coords of {name}, trying load texture info");
                     if let Some(texture_info) = primitive
                         .material()
                         .pbr_metallic_roughness()
                         .base_color_texture()
                     {
+                        log::info!("Texture info loaded, trying get texture");
                         if let gltf::image::Source::View { view, .. } =
                             texture_info.texture().source().source()
                         {
-                            // Текстурированный меш
+                            log::info!("Try load texture mesh");
+
+                            // Чтение данных изображения
+                            let image_data = &blob[view.offset()..view.offset() + view.length()];
+
+                            // Создание вершин
                             let vertices = positions
                                 .iter()
                                 .zip(tex_coords.iter())
                                 .zip(normals.iter())
                                 .map(|((pos, uv), normal)| TexturedVertex {
                                     position: pos.to_array(),
-                                    tex_coords: [uv[0], 1.0 - uv[1]], // Инвертируем V-координату
+                                    tex_coords: [uv.x, uv.y],
                                     normal: normal.to_array(),
                                 })
                                 .collect();
 
-                            let image_data =
-                                blob[view.offset()..view.offset() + view.length()].to_vec();
+                            // Сохраняем сырые данные изображения для последующей загрузки
                             textured_meshes
-                                .insert(name.to_string(), (vertices, indices, image_data));
+                                .insert(name.to_string(), (vertices, indices, image_data.to_vec()));
                             continue;
                         }
                     }
                 }
 
-                // Цветной меш
+                // Обработка цветных мешей
                 let colors = reader
                     .read_colors(0)
                     .map(|c| c.into_rgba_f32().map(|v| [v[0], v[1], v[2]]).collect())
@@ -368,8 +368,10 @@ impl Renderer {
                     normal: Mat3::IDENTITY.to_cols_array_2d(),
                 });
             }
+
             let texture =
                 Texture::from_bytes(&self.device, &self.queue, &image_data, &name).unwrap();
+
             self.texture_pipeline
                 .add_mesh(&self.device, &texture, &vertices, &indices, &instances);
         }
