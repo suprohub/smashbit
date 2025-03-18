@@ -1,6 +1,8 @@
 use anyhow::Result;
 use camera::Camera;
+use glam::{Vec2, Vec3};
 use gltf::Gltf;
+use light::Light;
 use pipeline::{
     InstanceRaw,
     color::{ColorPipeline, ColoredVertex},
@@ -10,6 +12,7 @@ use std::{collections::HashMap, fs, sync::Arc};
 use winit::{dpi::PhysicalSize, window::Window};
 
 pub mod camera;
+pub mod light;
 pub mod pipeline;
 pub mod texture;
 
@@ -27,6 +30,8 @@ pub struct Renderer {
 
     pub color_pipeline: ColorPipeline,
     pub texture_pipeline: TexturePipeline,
+
+    pub light: Light,
 }
 
 impl Renderer {
@@ -103,12 +108,20 @@ impl Renderer {
 
         let camera = Camera::new(&device, size.width, size.height);
 
+        let light = Light::new(&device);
+
         Ok(Self {
-            color_pipeline: ColorPipeline::new(&device, surface_format, &camera.bind_group_layout),
+            color_pipeline: ColorPipeline::new(
+                &device,
+                surface_format,
+                &camera.bind_group_layout,
+                &light.light_bind_group_layout,
+            ),
             texture_pipeline: TexturePipeline::new(
                 &device,
                 surface_format,
                 &camera.bind_group_layout,
+                &light.light_bind_group_layout,
             ),
             depth_texture,
             camera,
@@ -117,6 +130,7 @@ impl Renderer {
             surface_config,
             device,
             queue,
+            light,
         })
     }
 
@@ -174,10 +188,11 @@ impl Renderer {
                 timestamp_writes: None,
             });
 
-            self.color_pipeline
-                .begin_render_pass(&mut render_pass, &self.camera.bind_group);
-            self.texture_pipeline
-                .begin_render_pass(&mut render_pass, &self.camera.bind_group);
+            self.color_pipeline.begin_render_pass(
+                &mut render_pass,
+                &self.camera.bind_group,
+                &self.light.light_bind_group,
+            );
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -189,131 +204,169 @@ impl Renderer {
         log::info!("Adding gltf to scene");
 
         let gltf = Gltf::from_slice(&fs::read(path).unwrap()).unwrap();
-        let mut instances = HashMap::<String, Vec<InstanceRaw>>::new();
-        let mut textured_meshes =
-            HashMap::<String, (Vec<TexturedVertex>, Vec<u16>, Vec<u8>)>::new();
-        let mut colored_meshes = HashMap::<String, (Vec<ColoredVertex>, Vec<u16>, [f32; 4])>::new();
-
+        let mut instances: HashMap<String, Vec<InstanceRaw>> = HashMap::new();
+        let mut textured_meshes: HashMap<String, (Vec<TexturedVertex>, Vec<u16>, Vec<u8>)> =
+            HashMap::new();
+        let mut colored_meshes: HashMap<String, (Vec<ColoredVertex>, Vec<u16>, [f32; 4])> =
+            HashMap::new();
         let blob = gltf.blob.clone().unwrap();
 
         log::info!("Data collection");
-        // Phase 1: Data collection
         for node in gltf.nodes() {
-            if let Some(mesh) = node.mesh() {
-                let Some(name) = mesh.name() else { continue };
+            let Some(mesh) = node.mesh() else { continue };
+            let Some(name) = mesh.name() else { continue };
 
-                if let Some((base_name, _)) = name.split_once('.') {
-                    // Handle instances
-                    instances
-                        .entry(base_name.to_string())
-                        .or_default()
-                        .push(InstanceRaw {
-                            model: node.transform().matrix(),
-                        });
-                } else {
-                    // Handle meshes
-                    for primitive in mesh.primitives() {
-                        let reader = primitive.reader(|buffer| {
-                            if buffer.index() == 0 {
-                                Some(&blob)
-                            } else {
-                                None
-                            }
-                        });
-                        let Some(indices) = reader
-                            .read_indices()
-                            .map(|i| i.into_u32().map(|v| v as u16).collect::<Vec<_>>())
-                        else {
-                            continue;
-                        };
-                        let positions = reader.read_positions().unwrap().collect::<Vec<_>>();
+            if let Some((base_name, _)) = name.split_once('.') {
+                // Обработка инстансов
+                instances
+                    .entry(base_name.to_string())
+                    .or_default()
+                    .push(InstanceRaw {
+                        model: node.transform().matrix(),
+                        normal: Default::default(),
+                    });
+                continue;
+            }
 
-                        // Try to read texture data
-                        let mut texture_data = None;
-                        if let Some(tex_coords) = reader.read_tex_coords(0) {
-                            let tex_coords = tex_coords.into_f32().collect::<Vec<_>>();
-                            if let Some(texture_info) = primitive
-                                .material()
-                                .pbr_metallic_roughness()
-                                .base_color_texture()
-                            {
-                                if let gltf::image::Source::View { view, .. } =
-                                    texture_info.texture().source().source()
-                                {
-                                    texture_data = Some((
-                                        positions
-                                            .iter()
-                                            .zip(tex_coords.iter())
-                                            .map(|(pos, uv)| TexturedVertex {
-                                                position: *pos,
-                                                tex_coords: *uv,
-                                            })
-                                            .collect(),
-                                        indices.clone(),
-                                        blob[view.offset()..view.offset() + view.length()].to_vec(),
-                                    ));
-                                }
-                            }
-                        }
+            // Обработка мешей
+            for primitive in mesh.primitives() {
+                let reader = primitive.reader(|buffer| {
+                    if buffer.index() == 0 {
+                        Some(&blob)
+                    } else {
+                        None
+                    }
+                });
 
-                        if let Some((vertices, indices, image_data)) = texture_data {
+                // Чтение основных данных
+                let indices: Vec<u16> = match reader
+                    .read_indices()
+                    .map(|i| i.into_u32().map(|v| v as u16))
+                {
+                    Some(indices) => indices.collect(),
+                    None => continue,
+                };
+
+                let positions: Vec<Vec3> =
+                    reader.read_positions().unwrap().map(Vec3::from).collect();
+                if positions.is_empty() {
+                    log::warn!("Mesh '{}' has no positions, skipping", name);
+                    continue;
+                }
+
+                // Обработка нормалей
+                let normals = match reader.read_normals() {
+                    Some(n) => n.map(Vec3::from).collect(),
+                    None => {
+                        log::warn!("Normals not found for '{}', generating...", name);
+                        Self::compute_normals(&positions, &indices)
+                    }
+                };
+
+                // Проверка текстурных координат
+                if let Some(tex_coords) = reader
+                    .read_tex_coords(0)
+                    .map(|t| t.into_f32().map(Vec2::from).collect::<Vec<_>>())
+                {
+                    if let Some(texture_info) = primitive
+                        .material()
+                        .pbr_metallic_roughness()
+                        .base_color_texture()
+                    {
+                        if let gltf::image::Source::View { view, .. } =
+                            texture_info.texture().source().source()
+                        {
+                            // Текстурированный меш
+                            let vertices = positions
+                                .iter()
+                                .zip(tex_coords.iter())
+                                .zip(normals.iter())
+                                .map(|((pos, uv), normal)| TexturedVertex {
+                                    position: pos.to_array(),
+                                    tex_coords: uv.to_array(),
+                                    normal: normal.to_array(),
+                                })
+                                .collect();
+
+                            let image_data =
+                                blob[view.offset()..view.offset() + view.length()].to_vec();
                             textured_meshes
                                 .insert(name.to_string(), (vertices, indices, image_data));
-                        } else {
-                            // Handle colored mesh
-                            let colors = reader
-                                .read_colors(0)
-                                .map(|c| c.into_rgba_f32().map(|v| [v[0], v[1], v[2]]).collect())
-                                .unwrap_or_else(|| {
-                                    let base = primitive
-                                        .material()
-                                        .pbr_metallic_roughness()
-                                        .base_color_factor();
-                                    vec![[base[0], base[1], base[2]]; positions.len()]
-                                });
-
-                            colored_meshes.insert(
-                                name.to_string(),
-                                (
-                                    positions
-                                        .iter()
-                                        .zip(colors.iter())
-                                        .map(|(pos, color)| ColoredVertex {
-                                            position: *pos,
-                                            color: *color,
-                                        })
-                                        .collect(),
-                                    indices,
-                                    primitive
-                                        .material()
-                                        .pbr_metallic_roughness()
-                                        .base_color_factor(),
-                                ),
-                            );
+                            continue;
                         }
                     }
                 }
+
+                // Цветной меш
+                let colors = reader
+                    .read_colors(0)
+                    .map(|c| c.into_rgba_f32().map(|v| [v[0], v[1], v[2]]).collect())
+                    .unwrap_or_else(|| {
+                        let base = primitive
+                            .material()
+                            .pbr_metallic_roughness()
+                            .base_color_factor();
+                        vec![[base[0], base[1], base[2]]; positions.len()]
+                    });
+
+                let vertices = positions
+                    .iter()
+                    .zip(colors.iter())
+                    .zip(normals.iter())
+                    .map(|((pos, color), normal)| ColoredVertex {
+                        position: pos.to_array(),
+                        color: *color,
+                        normal: normal.to_array(),
+                    })
+                    .collect();
+
+                colored_meshes.insert(
+                    name.to_string(),
+                    (
+                        vertices,
+                        indices,
+                        primitive
+                            .material()
+                            .pbr_metallic_roughness()
+                            .base_color_factor(),
+                    ),
+                );
             }
         }
 
-        // Phase 2: Resource creation and rendering
-        log::info!("Process colored meshes");
-        // Process colored meshes
+        // Создание ресурсов
+        log::info!("Processing meshes");
         for (name, (vertices, indices, base_color)) in colored_meshes {
-            let instances = instances.remove(name.as_str()).unwrap_or_default();
+            let instances = instances.remove(&name).unwrap_or_default();
             self.color_pipeline
                 .add_mesh(&self.device, &vertices, &indices, &instances);
         }
 
-        log::info!("Process textured meshes");
-        // Process textured meshes
         for (name, (vertices, indices, image_data)) in textured_meshes {
             let texture =
                 texture::Texture::from_bytes(&self.device, &self.queue, &image_data, &name)
                     .unwrap();
-            let instances = instances.remove(name.as_str()).unwrap_or_default();
+            let instances = instances.remove(&name).unwrap_or_default();
             self.texture_pipeline
                 .add_mesh(&self.device, &texture, &vertices, &indices, &instances);
         }
+    }
+
+    fn compute_normals(positions: &[Vec3], indices: &[u16]) -> Vec<Vec3> {
+        let mut normals = vec![Vec3::ZERO; positions.len()];
+
+        for tri in indices.chunks_exact(3) {
+            let [a, b, c] = [tri[0] as usize, tri[1] as usize, tri[2] as usize];
+            let edge1 = positions[b] - positions[a];
+            let edge2 = positions[c] - positions[a];
+            let normal = edge1.cross(edge2).normalize();
+
+            normals[a] += normal;
+            normals[b] += normal;
+            normals[c] += normal;
+        }
+
+        normals.iter_mut().for_each(|n| *n = n.normalize());
+        normals
     }
 }

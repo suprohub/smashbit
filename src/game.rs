@@ -5,6 +5,7 @@ use crate::{
         pipeline::{InstanceRaw, color::ColoredVertex},
     },
 };
+use glam::Mat3;
 use kira::{
     AudioManager, AudioManagerSettings, DefaultBackend, sound::static_sound::StaticSoundData,
 };
@@ -50,15 +51,15 @@ impl ApplicationHandler for Game {
 
         #[rustfmt::skip]
         let cube_vertices = vec![
-            ColoredVertex { position: [-1.0, -1.0,  1.0], color: [1.0, 0.0, 0.0] }, // 0
-            ColoredVertex { position: [ 1.0, -1.0,  1.0], color: [0.0, 1.0, 0.0] }, // 1
-            ColoredVertex { position: [ 1.0,  1.0,  1.0], color: [0.0, 0.0, 1.0] }, // 2
-            ColoredVertex { position: [-1.0,  1.0,  1.0], color: [1.0, 1.0, 0.0] }, // 3
+            ColoredVertex { position: [-1.0, -1.0,  1.0], color: [1.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0] },
+            ColoredVertex { position: [ 1.0, -1.0,  1.0], color: [0.0, 1.0, 0.0], normal: [0.0, 0.0, 1.0] },
+            ColoredVertex { position: [ 1.0,  1.0,  1.0], color: [0.0, 0.0, 1.0], normal: [0.0, 0.0, 1.0] },
+            ColoredVertex { position: [-1.0,  1.0,  1.0], color: [1.0, 1.0, 0.0], normal: [0.0, 0.0, 1.0] },
 
-            ColoredVertex { position: [-1.0, -1.0, -1.0], color: [1.0, 0.0, 1.0] }, // 4
-            ColoredVertex { position: [ 1.0, -1.0, -1.0], color: [0.0, 1.0, 1.0] }, // 5
-            ColoredVertex { position: [ 1.0,  1.0, -1.0], color: [0.0, 0.0, 0.0] }, // 6
-            ColoredVertex { position: [-1.0,  1.0, -1.0], color: [1.0, 1.0, 1.0] }, // 7
+            ColoredVertex { position: [-1.0, -1.0, -1.0], color: [1.0, 0.0, 1.0], normal: [0.0, 0.0, -1.0] },
+            ColoredVertex { position: [ 1.0, -1.0, -1.0], color: [0.0, 1.0, 1.0], normal: [0.0, 0.0, -1.0] },
+            ColoredVertex { position: [ 1.0,  1.0, -1.0], color: [0.0, 0.0, 0.0], normal: [0.0, 0.0, -1.0] },
+            ColoredVertex { position: [-1.0,  1.0, -1.0], color: [1.0, 1.0, 1.0], normal: [0.0, 0.0, -1.0] },
         ];
 
         #[rustfmt::skip]
@@ -75,6 +76,7 @@ impl ApplicationHandler for Game {
             .map(|i| InstanceRaw {
                 model: glam::Mat4::from_translation(glam::Vec3::new(i as f32 * 3.0, 0.0, 0.0))
                     .to_cols_array_2d(),
+                normal: Mat3::IDENTITY.to_cols_array_2d(),
             })
             .collect::<Vec<_>>();
 
@@ -92,7 +94,7 @@ impl ApplicationHandler for Game {
 
         if let Some(audio) = &mut self.audio {
             audio
-                .play(StaticSoundData::from_file("0.ogg").unwrap())
+                .play(StaticSoundData::from_file("assets/music/0.ogg").unwrap())
                 .unwrap();
         }
     }

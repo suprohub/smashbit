@@ -4,7 +4,8 @@ use wgpu::util::DeviceExt;
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
-    view_proj: [[f32; 4]; 4],
+    pub view_pos: [f32; 4],
+    pub view_proj: [[f32; 4]; 4],
 }
 
 impl Default for CameraUniform {
@@ -16,6 +17,7 @@ impl Default for CameraUniform {
 impl CameraUniform {
     pub fn new() -> Self {
         Self {
+            view_pos: Default::default(),
             view_proj: Mat4::IDENTITY.to_cols_array_2d(),
         }
     }
@@ -54,7 +56,7 @@ impl Camera {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -123,5 +125,6 @@ impl Camera {
         let view = self.calc_view_matrix();
         let proj = self.calc_proj_matrix();
         self.uniform.view_proj = (proj * view).to_cols_array_2d();
+        self.uniform.view_pos = [self.position.x, self.position.y, self.position.z, 1.0];
     }
 }
