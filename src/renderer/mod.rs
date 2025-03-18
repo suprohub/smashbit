@@ -1,6 +1,6 @@
 use anyhow::Result;
 use camera::Camera;
-use glam::{Vec2, Vec3};
+use glam::{Mat3, Mat4, Vec2, Vec3};
 use gltf::Gltf;
 use light::Light;
 use pipeline::{
@@ -9,6 +9,7 @@ use pipeline::{
     texture::{TexturePipeline, TexturedVertex},
 };
 use std::{collections::HashMap, fs, sync::Arc};
+use texture::Texture;
 use winit::{dpi::PhysicalSize, window::Window};
 
 pub mod camera;
@@ -193,6 +194,12 @@ impl Renderer {
                 &self.camera.bind_group,
                 &self.light.light_bind_group,
             );
+
+            self.texture_pipeline.begin_render_pass(
+                &mut render_pass,
+                &self.camera.bind_group,
+                &self.light.light_bind_group,
+            );
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -216,6 +223,11 @@ impl Renderer {
             let Some(mesh) = node.mesh() else { continue };
             let Some(name) = mesh.name() else { continue };
 
+            // Вычисляем нормальную матрицу для узла
+            let model_matrix =
+                Mat3::from_mat4(Mat4::from_cols_array_2d(&node.transform().matrix()));
+            let normal_matrix = model_matrix.inverse().transpose();
+
             if let Some((base_name, _)) = name.split_once('.') {
                 // Обработка инстансов
                 instances
@@ -223,7 +235,7 @@ impl Renderer {
                     .or_default()
                     .push(InstanceRaw {
                         model: node.transform().matrix(),
-                        normal: Default::default(),
+                        normal: normal_matrix.to_cols_array_2d(),
                     });
                 continue;
             }
@@ -283,7 +295,7 @@ impl Renderer {
                                 .zip(normals.iter())
                                 .map(|((pos, uv), normal)| TexturedVertex {
                                     position: pos.to_array(),
-                                    tex_coords: uv.to_array(),
+                                    tex_coords: [uv[0], 1.0 - uv[1]], // Инвертируем V-координату
                                     normal: normal.to_array(),
                                 })
                                 .collect();
@@ -336,17 +348,28 @@ impl Renderer {
 
         // Создание ресурсов
         log::info!("Processing meshes");
-        for (name, (vertices, indices, base_color)) in colored_meshes {
-            let instances = instances.remove(&name).unwrap_or_default();
+        for (name, (vertices, indices, _base_color)) in colored_meshes {
+            let mut instances = instances.remove(&name).unwrap_or_default();
+            if instances.is_empty() {
+                instances.push(InstanceRaw {
+                    model: glam::Mat4::IDENTITY.to_cols_array_2d(),
+                    normal: Mat3::IDENTITY.to_cols_array_2d(),
+                });
+            }
             self.color_pipeline
                 .add_mesh(&self.device, &vertices, &indices, &instances);
         }
 
         for (name, (vertices, indices, image_data)) in textured_meshes {
+            let mut instances = instances.remove(&name).unwrap_or_default();
+            if instances.is_empty() {
+                instances.push(InstanceRaw {
+                    model: glam::Mat4::IDENTITY.to_cols_array_2d(),
+                    normal: Mat3::IDENTITY.to_cols_array_2d(),
+                });
+            }
             let texture =
-                texture::Texture::from_bytes(&self.device, &self.queue, &image_data, &name)
-                    .unwrap();
-            let instances = instances.remove(&name).unwrap_or_default();
+                Texture::from_bytes(&self.device, &self.queue, &image_data, &name).unwrap();
             self.texture_pipeline
                 .add_mesh(&self.device, &texture, &vertices, &indices, &instances);
         }

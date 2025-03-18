@@ -1,11 +1,7 @@
 use crate::{
     camera_controller::CameraController,
-    renderer::{
-        Renderer,
-        pipeline::{InstanceRaw, color::ColoredVertex},
-    },
+    renderer::Renderer,
 };
-use glam::Mat3;
 use kira::{
     AudioManager, AudioManagerSettings, DefaultBackend, sound::static_sound::StaticSoundData,
 };
@@ -49,44 +45,6 @@ impl ApplicationHandler for Game {
 
         let mut renderer = pollster::block_on(Renderer::new(window)).unwrap();
 
-        #[rustfmt::skip]
-        let cube_vertices = vec![
-            ColoredVertex { position: [-1.0, -1.0,  1.0], color: [1.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0] },
-            ColoredVertex { position: [ 1.0, -1.0,  1.0], color: [0.0, 1.0, 0.0], normal: [0.0, 0.0, 1.0] },
-            ColoredVertex { position: [ 1.0,  1.0,  1.0], color: [0.0, 0.0, 1.0], normal: [0.0, 0.0, 1.0] },
-            ColoredVertex { position: [-1.0,  1.0,  1.0], color: [1.0, 1.0, 0.0], normal: [0.0, 0.0, 1.0] },
-
-            ColoredVertex { position: [-1.0, -1.0, -1.0], color: [1.0, 0.0, 1.0], normal: [0.0, 0.0, -1.0] },
-            ColoredVertex { position: [ 1.0, -1.0, -1.0], color: [0.0, 1.0, 1.0], normal: [0.0, 0.0, -1.0] },
-            ColoredVertex { position: [ 1.0,  1.0, -1.0], color: [0.0, 0.0, 0.0], normal: [0.0, 0.0, -1.0] },
-            ColoredVertex { position: [-1.0,  1.0, -1.0], color: [1.0, 1.0, 1.0], normal: [0.0, 0.0, -1.0] },
-        ];
-
-        #[rustfmt::skip]
-        let cube_indices = vec![
-            0, 1, 2, 2, 3, 0,
-            1, 5, 6, 6, 2, 1,
-            5, 4, 7, 7, 6, 5,
-            4, 0, 3, 3, 7, 4,
-            3, 2, 6, 6, 7, 3,
-            4, 5, 1, 1, 0, 4,
-        ];
-
-        let instances = (0..10)
-            .map(|i| InstanceRaw {
-                model: glam::Mat4::from_translation(glam::Vec3::new(i as f32 * 3.0, 0.0, 0.0))
-                    .to_cols_array_2d(),
-                normal: Mat3::IDENTITY.to_cols_array_2d(),
-            })
-            .collect::<Vec<_>>();
-
-        renderer.color_pipeline.add_mesh(
-            &renderer.device,
-            &cube_vertices,
-            &cube_indices,
-            &instances,
-        );
-
         renderer.add_gltf("map.glb");
 
         self.renderer = Some(renderer);
@@ -125,6 +83,11 @@ impl ApplicationHandler for Game {
                     renderer.render().unwrap();
                     self.camera_controller
                         .update_camera(&mut renderer.camera, dt);
+                }
+            }
+            WindowEvent::Resized(new_size) => {
+                if let Some(renderer) = &mut self.renderer {
+                    renderer.resize(new_size);
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {

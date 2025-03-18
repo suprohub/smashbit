@@ -53,7 +53,7 @@ fn vs_main(
     var out: VertexOutput;
     out.world_position = (model_matrix * vec4<f32>(model.position, 1.0)).xyz;
     out.clip_position = camera.view_proj * vec4<f32>(out.world_position, 1.0);
-    out.tex_coords = model.tex_coords;
+    out.tex_coords = vec2<f32>(model.tex_coords.x, 1.0 - model.tex_coords.y); // Инвертируем V-координату
     out.world_normal = normalize(normal_matrix * model.normal);
     return out;
 }

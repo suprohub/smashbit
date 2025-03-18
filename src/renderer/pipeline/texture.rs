@@ -200,12 +200,14 @@ impl TexturePipeline {
         &self,
         render_pass: &mut wgpu::RenderPass,
         camera_bind_group: &wgpu::BindGroup,
+        light_bind_group: &wgpu::BindGroup,
     ) {
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, camera_bind_group, &[]);
+        render_pass.set_bind_group(1, camera_bind_group, &[]);
+        render_pass.set_bind_group(2, light_bind_group, &[]);
 
         for mesh in &self.meshes {
-            render_pass.set_bind_group(1, &mesh.bind_group, &[]);
+            render_pass.set_bind_group(0, &mesh.bind_group, &[]);
             render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, mesh.instance_buffer.slice(..));
             render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint16);

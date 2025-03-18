@@ -1,4 +1,4 @@
-use crate::renderer::{light::Light, texture};
+use crate::renderer::texture;
 use wgpu::util::DeviceExt;
 
 use super::InstanceRaw;
