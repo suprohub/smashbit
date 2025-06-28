@@ -44,7 +44,7 @@ pub struct TextureMesh {
     index_count: u32,
     instance_buffer: wgpu::Buffer,
     instances_len: u32,
-    bind_group: wgpu::BindGroup, // unused here
+    bind_group: wgpu::BindGroup,
 }
 
 pub struct TexturePipeline {

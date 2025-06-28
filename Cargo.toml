@@ -7,14 +7,14 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1.0"
-bytemuck = { version = "1.22", features = ["derive"] }
+bytemuck = { version = "1.23", features = ["derive"] }
 glam = "0.30"
 gltf = "1.4"
 image = "0.25"
 kira = "0.10"
 log = "0.4"
 pollster = "0.4"
-rapier3d = "0.23"
+rapier3d = "0.26"
 simple_logger = "5.0"
-wgpu = "24.0"
+wgpu = "25.0"
 winit = "0.30"
