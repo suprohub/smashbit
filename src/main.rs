@@ -7,6 +7,7 @@ pub mod camera_controller;
 pub mod game;
 pub mod physics;
 pub mod renderer;
+pub mod scene;
 
 fn main() -> Result<()> {
     simple_logger::init_with_level(Level::Info)?;
