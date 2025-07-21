@@ -39,12 +39,33 @@ impl TexturedVertex {
 }
 
 pub struct TextureMesh {
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    index_count: u32,
-    instance_buffer: wgpu::Buffer,
-    instances_len: u32,
-    bind_group: wgpu::BindGroup,
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub index_count: u32,
+    pub instance_buffer: wgpu::Buffer,
+    pub instances_len: u32,
+    pub bind_group: wgpu::BindGroup,
+}
+
+impl TextureMesh {
+    pub fn update_instance(
+        &mut self,
+        queue: &wgpu::Queue,
+        instance_index: usize,
+        new_instance: &InstanceRaw,
+    ) {
+        let offset = (instance_index * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress;
+        queue.write_buffer(
+            &self.instance_buffer,
+            offset,
+            bytemuck::bytes_of(new_instance),
+        );
+    }
+
+    pub fn update_all_instances(&mut self, queue: &wgpu::Queue, instances: &[InstanceRaw]) {
+        self.instances_len = instances.len() as u32;
+        queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
+    }
 }
 
 pub struct TexturePipeline {
@@ -194,6 +215,14 @@ impl TexturePipeline {
             instances_len: instances.len() as u32,
             bind_group,
         });
+    }
+
+    pub fn mesh_mut(&mut self, mesh_index: usize) -> Option<&mut TextureMesh> {
+        self.meshes.get_mut(mesh_index)
+    }
+
+    pub fn remove_mesh(&mut self, index: usize) -> TextureMesh {
+        self.meshes.remove(index)
     }
 
     pub fn begin_render_pass(

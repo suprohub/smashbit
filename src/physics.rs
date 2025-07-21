@@ -1,10 +1,11 @@
 use glam::Vec3;
 use rapier3d::{
+    math::Vector,
     na::Vector3,
     prelude::{
-        BroadPhaseMultiSap, CCDSolver, ColliderSet, ImpulseJointSet, IntegrationParameters,
-        IslandManager, MultibodyJointSet, NarrowPhase, PhysicsPipeline, QueryPipeline,
-        RigidBodySet,
+        BroadPhaseMultiSap, CCDSolver, ColliderBuilder, ColliderSet, ImpulseJointSet,
+        IntegrationParameters, IslandManager, MultibodyJointSet, NarrowPhase, PhysicsPipeline,
+        QueryPipeline, RigidBodyBuilder, RigidBodyHandle, RigidBodySet,
     },
 };
 
@@ -47,21 +48,51 @@ impl Physics {
         }
     }
 
-    pub fn step(&mut self) {
-        self.pipeline.step(
-            &Vector3::new(self.gravity.x, self.gravity.y, self.gravity.z),
-            &self.integration_parameters,
-            &mut self.islands,
-            &mut self.broad_phase,
-            &mut self.narrow_phase,
-            &mut self.bodies,
-            &mut self.colliders,
-            &mut self.impulse_joints,
-            &mut self.multibody_joints,
-            &mut self.ccd_solver,
-            self.query_pipeline.as_mut(),
-            &mut (),
-            &mut (),
-        );
+    pub fn step(&mut self, delta_secs: f32, max_dt: f32, time_scale: f32, substeps: u8) {
+        self.integration_parameters.dt = (delta_secs * time_scale).min(max_dt);
+
+        let mut substep_integration_parameters = self.integration_parameters;
+        substep_integration_parameters.dt /= substeps as f32;
+
+        for _ in 0..substeps {
+            self.pipeline.step(
+                &Vector3::new(self.gravity.x, self.gravity.y, self.gravity.z),
+                &substep_integration_parameters,
+                &mut self.islands,
+                &mut self.broad_phase,
+                &mut self.narrow_phase,
+                &mut self.bodies,
+                &mut self.colliders,
+                &mut self.impulse_joints,
+                &mut self.multibody_joints,
+                &mut self.ccd_solver,
+                self.query_pipeline.as_mut(),
+                &(),
+                &(),
+            );
+        }
+    }
+
+    pub fn create_ball(
+        &mut self,
+        id: u128,
+        position: Vec3,
+        velocity: Vec3,
+        radius: f32,
+    ) -> RigidBodyHandle {
+        let rigid_body = RigidBodyBuilder::dynamic()
+            .translation(Vector::new(position.x, position.y, position.z))
+            .linvel(Vector::new(velocity.x, velocity.y, velocity.z))
+            .user_data(id)
+            .build();
+
+        let handle = self.bodies.insert(rigid_body);
+
+        let collider = ColliderBuilder::ball(radius).density(1.0).build();
+
+        self.colliders
+            .insert_with_parent(collider, handle, &mut self.bodies);
+
+        handle
     }
 }

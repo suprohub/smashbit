@@ -16,5 +16,9 @@ log = "0.4"
 pollster = "0.4"
 rapier3d = "0.26"
 simple_logger = "5.0"
-wgpu = "25.0"
+wgpu = "26.0"
 winit = "0.30"
+
+[profile.release]
+lto = true
+strip = true

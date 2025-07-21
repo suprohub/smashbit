@@ -99,16 +99,18 @@ impl Camera {
         camera
     }
 
-    fn calc_view_matrix(&self) -> Mat4 {
+    pub fn calc_view_dir(&self) -> Vec3 {
         let (sin_pitch, cos_pitch) = self.pitch.sin_cos();
         let (sin_yaw, cos_yaw) = self.yaw.sin_cos();
 
-        let dir = Vec3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize();
-
-        Mat4::look_to_rh(self.position, dir, Vec3::Y)
+        Vec3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize()
     }
 
-    fn calc_proj_matrix(&self) -> Mat4 {
+    pub fn calc_view_matrix(&self) -> Mat4 {
+        Mat4::look_to_rh(self.position, self.calc_view_dir(), Vec3::Y)
+    }
+
+    pub fn calc_proj_matrix(&self) -> Mat4 {
         Mat4::perspective_rh_gl(self.fovy.to_radians(), self.aspect, self.znear, self.zfar)
     }
 

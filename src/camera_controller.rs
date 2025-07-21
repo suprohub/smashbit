@@ -22,7 +22,7 @@ pub struct CameraController {
 
 impl Default for CameraController {
     fn default() -> Self {
-        CameraController::new(4.0, 1.0)
+        CameraController::new(4.0, 5.0)
     }
 }
 

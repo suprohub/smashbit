@@ -10,7 +10,10 @@ use crate::scene::Scene;
 
 pub struct Game {
     scene: Option<Scene>,
+    last_update: Instant,
     last_frame: Instant,
+    target_fps: f32,
+    target_physics_ps: f32,
     mouse_left: bool,
 }
 
@@ -18,7 +21,10 @@ impl Default for Game {
     fn default() -> Self {
         Self {
             scene: None,
+            last_update: Instant::now(),
             last_frame: Instant::now(),
+            target_fps: 1.0 / 60.0,
+            target_physics_ps: 1.0 / 32.0,
             mouse_left: false,
         }
     }
@@ -51,17 +57,14 @@ impl ApplicationHandler for Game {
                 WindowEvent::RedrawRequested => {
                     let now = Instant::now();
                     let dt = now - self.last_frame;
-                    self.last_frame = now;
 
-                    scene.renderer.render().unwrap();
-                    scene
-                        .camera_controller
-                        .update_camera(&mut scene.renderer.camera, dt);
+                    if dt.as_secs_f32() >= self.target_fps {
+                        scene.renderer.render().unwrap();
+                        self.last_frame = now;
+                    }
                 }
                 WindowEvent::Resized(new_size) => {
-                    if let Some(scene) = &mut self.scene {
-                        scene.renderer.resize(new_size);
-                    }
+                    scene.renderer.resize(new_size);
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
                     if let PhysicalKey::Code(keycode) = event.physical_key {
@@ -81,6 +84,15 @@ impl ApplicationHandler for Game {
                 WindowEvent::MouseInput { state, button, .. } => {
                     if MouseButton::Left == button {
                         self.mouse_left = state.is_pressed();
+                    }
+
+                    if MouseButton::Left == button && state.is_pressed() {
+                        scene.spawn_ball_instance(
+                            scene.renderer.camera.position,        // стартовая позиция
+                            scene.renderer.camera.calc_view_dir(), // направление
+                            15.0,                                  // скорость
+                            0.5,                                   // радиус
+                        );
                     }
                 }
                 _ => {}
@@ -104,8 +116,18 @@ impl ApplicationHandler for Game {
     }
 
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
-        // Todo limit fps & physics step
-        if let Some(scene) = &self.scene {
+        if let Some(scene) = &mut self.scene {
+            let now = Instant::now();
+            let dt = now - self.last_update;
+            self.last_update = now;
+
+            scene
+                .camera_controller
+                .update_camera(&mut scene.renderer.camera, dt);
+            scene
+                .physics
+                .step(dt.as_secs_f32(), self.target_physics_ps, 1.0, 1);
+            scene.update_objects();
             scene.renderer.window.request_redraw();
         }
     }

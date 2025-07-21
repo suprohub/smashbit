@@ -1,11 +1,20 @@
-use std::{collections::HashMap, fs, sync::Arc};
+use std::{
+    collections::HashMap,
+    fs,
+    hash::{DefaultHasher, Hash, Hasher},
+    sync::Arc,
+};
 
 use crate::{
     camera_controller::CameraController,
     physics::Physics,
     renderer::{
         Renderer,
-        pipeline::{InstanceRaw, color::ColoredVertex, texture::TexturedVertex},
+        pipeline::{
+            InstanceRaw,
+            color::{ColoredVertex, generate_sphere},
+            texture::TexturedVertex,
+        },
         texture::Texture,
     },
 };
@@ -66,6 +75,7 @@ impl Scene {
         for (name, (vertices, indices, _base_color)) in colored_meshes {
             self.renderer.color_pipeline.add_mesh(
                 &self.renderer.device,
+                hash_string_to_u64(&name),
                 &vertices,
                 &indices,
                 instances.get(&name).unwrap(),
@@ -122,11 +132,7 @@ impl Scene {
                 let collider = match ColliderBuilder::trimesh(points, triangles) {
                     Ok(builder) => builder.build(),
                     Err(e) => {
-                        log::error!(
-                            "Failed to create trimesh collider for mesh {}: {:?}",
-                            name,
-                            e
-                        );
+                        log::error!("Failed to create trimesh collider for mesh {name}: {e:?}");
                         continue;
                     }
                 };
@@ -213,14 +219,14 @@ impl Scene {
 
         let positions: Vec<Vec3> = reader.read_positions().unwrap().map(Vec3::from).collect();
         if positions.is_empty() {
-            log::warn!("Mesh '{}' has no positions, skipping", name);
+            log::warn!("Mesh '{name}' has no positions, skipping");
             return;
         }
 
         let normals = match reader.read_normals() {
             Some(n) => n.map(Vec3::from).collect(),
             None => {
-                log::warn!("Normals not found for '{}', generating...", name);
+                log::warn!("Normals not found for '{name}', generating...");
                 Renderer::compute_normals(&positions, &indices)
             }
         };
@@ -300,11 +306,98 @@ impl Scene {
         );
     }
 
+    pub fn init_ball(&mut self) {
+        let (vertices, indices) = generate_sphere(0.5, 16, 16, [1.0, 0.0, 0.0]);
+        self.renderer.color_pipeline.add_mesh(
+            &self.renderer.device,
+            hash_string_to_u64("ball"),
+            &vertices,
+            &indices,
+            &[InstanceRaw {
+                model: Default::default(),
+                normal: Default::default(),
+            }],
+        );
+    }
+
+    pub fn spawn_ball_instance(
+        &mut self,
+        position: Vec3,
+        direction: Vec3,
+        speed: f32,
+        radius: f32,
+    ) {
+        let mesh_id = hash_string_to_u64("ball");
+        let mesh = self
+            .renderer
+            .color_pipeline
+            .meshes
+            .get_mut(&mesh_id)
+            .unwrap();
+
+        let transform = Mat4::from_translation(position);
+        let normal_matrix = Mat3::from_mat4(transform).inverse().transpose();
+
+        mesh.add_instance(
+            &self.renderer.device,
+            &self.renderer.queue,
+            &InstanceRaw {
+                model: transform.to_cols_array_2d(),
+                normal: normal_matrix.to_cols_array_2d(),
+            },
+        );
+
+        let instance_id = mesh.instance_count as u128 - 1;
+
+        let velocity = direction * speed;
+        self.physics.create_ball(
+            ((mesh_id as u128) << 64) | instance_id,
+            position,
+            velocity,
+            radius,
+        );
+    }
+
+    pub fn update_objects(&mut self) {
+        for (_, body) in self.physics.bodies.iter() {
+            // Remove if object leave camera
+
+            // .. todo
+
+            // Update dynamic objects
+            if body.user_data != 0 {
+                let model = body.position().to_homogeneous().into();
+                let normal = Mat3::from_mat4(Mat4::from_cols_array_2d(&model))
+                    .inverse()
+                    .transpose()
+                    .to_cols_array_2d();
+
+                self.renderer
+                    .color_pipeline
+                    .meshes
+                    .get_mut(&((body.user_data >> 64) as u64))
+                    .unwrap()
+                    .update_instance(
+                        &self.renderer.queue,
+                        body.user_data as usize,
+                        &InstanceRaw { model, normal },
+                    );
+            }
+        }
+    }
+
     pub fn init_level(&mut self) {
+        self.init_ball();
         self.add_gltf("map.glb");
 
         self.audio
             .play(StaticSoundData::from_file("assets/music/12.ogg").unwrap())
             .unwrap();
     }
+}
+
+fn hash_string_to_u64(s: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    hasher.finish()
 }
