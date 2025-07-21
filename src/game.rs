@@ -88,10 +88,10 @@ impl ApplicationHandler for Game {
 
                     if MouseButton::Left == button && state.is_pressed() {
                         scene.spawn_ball_instance(
-                            scene.renderer.camera.position,        // стартовая позиция
-                            scene.renderer.camera.calc_view_dir(), // направление
-                            15.0,                                  // скорость
-                            0.5,                                   // радиус
+                            scene.renderer.camera.position,
+                            scene.renderer.camera.calc_view_dir(),
+                            15.0,
+                            0.5,
                         );
                     }
                 }
@@ -128,6 +128,7 @@ impl ApplicationHandler for Game {
                 .physics
                 .step(dt.as_secs_f32(), self.target_physics_ps, 1.0, 1);
             scene.update_objects();
+            scene.cull_instances_behind_camera();
             scene.renderer.window.request_redraw();
         }
     }

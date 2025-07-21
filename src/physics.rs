@@ -3,9 +3,9 @@ use rapier3d::{
     math::Vector,
     na::Vector3,
     prelude::{
-        BroadPhaseMultiSap, CCDSolver, ColliderBuilder, ColliderSet, ImpulseJointSet,
-        IntegrationParameters, IslandManager, MultibodyJointSet, NarrowPhase, PhysicsPipeline,
-        QueryPipeline, RigidBodyBuilder, RigidBodyHandle, RigidBodySet,
+        BroadPhaseMultiSap, CCDSolver, ColliderBuilder, ColliderHandle, ColliderSet,
+        ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet, NarrowPhase,
+        PhysicsPipeline, QueryPipeline, RigidBodyBuilder, RigidBodyHandle, RigidBodySet,
     },
 };
 
@@ -79,20 +79,21 @@ impl Physics {
         position: Vec3,
         velocity: Vec3,
         radius: f32,
-    ) -> RigidBodyHandle {
-        let rigid_body = RigidBodyBuilder::dynamic()
-            .translation(Vector::new(position.x, position.y, position.z))
-            .linvel(Vector::new(velocity.x, velocity.y, velocity.z))
-            .user_data(id)
-            .build();
+    ) -> (RigidBodyHandle, ColliderHandle) {
+        let rigid_body = self.bodies.insert(
+            RigidBodyBuilder::dynamic()
+                .translation(Vector::new(position.x, position.y, position.z))
+                .linvel(Vector::new(velocity.x, velocity.y, velocity.z))
+                .user_data(id)
+                .build(),
+        );
 
-        let handle = self.bodies.insert(rigid_body);
+        let collider = self.colliders.insert_with_parent(
+            ColliderBuilder::ball(radius).density(1.0).build(),
+            rigid_body,
+            &mut self.bodies,
+        );
 
-        let collider = ColliderBuilder::ball(radius).density(1.0).build();
-
-        self.colliders
-            .insert_with_parent(collider, handle, &mut self.bodies);
-
-        handle
+        (rigid_body, collider)
     }
 }

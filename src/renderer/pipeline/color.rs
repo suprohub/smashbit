@@ -20,19 +20,16 @@ impl ColoredVertex {
             array_stride: std::mem::size_of::<ColoredVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
-                // position
                 wgpu::VertexAttribute {
                     offset: 0,
                     shader_location: 0,
                     format: wgpu::VertexFormat::Float32x3,
                 },
-                // color
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 3]>() as _,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
                 },
-                // normal
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 6]>() as _,
                     shader_location: 2,
@@ -48,8 +45,8 @@ pub struct ColorMesh {
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
     pub instance_buffer: wgpu::Buffer,
-    pub instance_count: u32,
     pub instance_capacity: u32,
+    pub instances: Vec<InstanceRaw>,
 }
 
 impl ColorMesh {
@@ -59,16 +56,69 @@ impl ColorMesh {
         queue: &wgpu::Queue,
         instance: &InstanceRaw,
     ) {
-        if self.instance_count >= self.instance_capacity {
+        if self.instances.len() as u32 >= self.instance_capacity {
             let new_capacity = (self.instance_capacity * 2).max(1);
             self.resize_instance_buffer(device, queue, new_capacity);
         }
 
-        let offset = (self.instance_count as usize * std::mem::size_of::<InstanceRaw>())
+        self.instances.push(*instance);
+        let offset = ((self.instances.len() - 1) * std::mem::size_of::<InstanceRaw>())
             as wgpu::BufferAddress;
-
         queue.write_buffer(&self.instance_buffer, offset, bytemuck::bytes_of(instance));
-        self.instance_count += 1;
+    }
+
+    pub fn remove_instance(
+        &mut self,
+        _device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        instance_index: usize,
+    ) {
+        assert!(
+            instance_index < self.instances.len(),
+            "instance_index out of bounds"
+        );
+
+        let last_index = self.instances.len() - 1;
+        if instance_index == last_index {
+            self.instances.pop();
+            return;
+        }
+
+        let last_instance = self.instances[last_index];
+        self.instances[instance_index] = last_instance;
+        self.instances.pop();
+
+        let offset = (instance_index * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress;
+        queue.write_buffer(
+            &self.instance_buffer,
+            offset,
+            bytemuck::bytes_of(&last_instance),
+        );
+    }
+
+    pub fn remove_instances_batch(
+        &mut self,
+        _device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        indices: &[usize],
+    ) {
+        let new_instances = self
+            .instances
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !indices.contains(i))
+            .map(|(_, inst)| *inst)
+            .collect::<Vec<_>>();
+
+        if !new_instances.is_empty() {
+            queue.write_buffer(
+                &self.instance_buffer,
+                0,
+                bytemuck::cast_slice(&new_instances),
+            );
+        }
+
+        self.instances = new_instances;
     }
 
     pub fn update_all_instances(
@@ -78,13 +128,15 @@ impl ColorMesh {
         instances: &[InstanceRaw],
     ) {
         let new_count = instances.len() as u32;
-
         if new_count > self.instance_capacity {
             self.resize_instance_buffer(device, queue, new_count);
         }
 
-        queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
-        self.instance_count = new_count;
+        if !instances.is_empty() {
+            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
+        }
+
+        self.instances = instances.to_vec();
     }
 
     fn resize_instance_buffer(
@@ -103,7 +155,7 @@ impl ColorMesh {
             mapped_at_creation: false,
         });
 
-        if self.instance_count > 0 {
+        if !self.instances.is_empty() {
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Instance Buffer Copy Encoder"),
             });
@@ -113,8 +165,7 @@ impl ColorMesh {
                 0,
                 &new_buffer,
                 0,
-                (self.instance_count as usize * std::mem::size_of::<InstanceRaw>())
-                    as wgpu::BufferAddress,
+                (self.instances.len() * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress,
             );
 
             queue.submit(std::iter::once(encoder.finish()));
@@ -130,13 +181,16 @@ impl ColorMesh {
         instance_index: usize,
         new_instance: &InstanceRaw,
     ) {
-        assert!((instance_index as u32) < self.instance_count);
-        let offset = (instance_index * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress;
-        queue.write_buffer(
-            &self.instance_buffer,
-            offset,
-            bytemuck::bytes_of(new_instance),
-        );
+        if instance_index < self.instances.len() {
+            self.instances[instance_index] = *new_instance;
+            let offset =
+                (instance_index * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress;
+            queue.write_buffer(
+                &self.instance_buffer,
+                offset,
+                bytemuck::bytes_of(new_instance),
+            );
+        }
     }
 }
 
@@ -245,8 +299,8 @@ impl ColorPipeline {
                 index_buffer,
                 index_count: indices.len() as u32,
                 instance_buffer,
-                instance_count: instances.len() as u32,
                 instance_capacity: instances.len() as u32,
+                instances: instances.to_vec(),
             },
         );
     }
@@ -264,7 +318,7 @@ impl ColorPipeline {
             render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, mesh.instance_buffer.slice(..));
             render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..mesh.index_count, 0, 0..mesh.instance_count);
+            render_pass.draw_indexed(0..mesh.index_count, 0, 0..mesh.instances.len() as u32);
         }
     }
 }
@@ -275,21 +329,46 @@ pub fn generate_sphere(
     stacks: u16,
     color: [f32; 3],
 ) -> (Vec<ColoredVertex>, Vec<u16>) {
-    let mut vertices = Vec::new();
-    let mut indices = Vec::new();
+    let vertex_count = (stacks as usize + 1) * (sectors as usize + 1);
+    let index_count = if stacks >= 2 {
+        6 * sectors as usize * (stacks as usize - 1)
+    } else {
+        0
+    };
+
+    let mut vertices = Vec::with_capacity(vertex_count);
+    let mut indices = Vec::with_capacity(index_count);
 
     let sector_step = 2.0 * std::f32::consts::PI / sectors as f32;
     let stack_step = std::f32::consts::PI / stacks as f32;
 
+    // Precompute sector trigonometric values
+    let mut sector_cos = Vec::with_capacity(sectors as usize + 1);
+    let mut sector_sin = Vec::with_capacity(sectors as usize + 1);
+    for j in 0..=sectors {
+        let sector_angle = j as f32 * sector_step;
+        sector_cos.push(sector_angle.cos());
+        sector_sin.push(sector_angle.sin());
+    }
+
+    // Precompute stack trigonometric values
+    let mut stack_cos = Vec::with_capacity(stacks as usize + 1);
+    let mut stack_sin = Vec::with_capacity(stacks as usize + 1);
     for i in 0..=stacks {
         let stack_angle = std::f32::consts::PI / 2.0 - i as f32 * stack_step;
-        let xy = radius * stack_angle.cos();
-        let z = radius * stack_angle.sin();
+        stack_cos.push(stack_angle.cos());
+        stack_sin.push(stack_angle.sin());
+    }
+
+    for i in 0..=stacks {
+        let i_idx = i as usize;
+        let xy = radius * stack_cos[i_idx];
+        let z = radius * stack_sin[i_idx];
 
         for j in 0..=sectors {
-            let sector_angle = j as f32 * sector_step;
-            let x = xy * sector_angle.cos();
-            let y = xy * sector_angle.sin();
+            let j_idx = j as usize;
+            let x = xy * sector_cos[j_idx];
+            let y = xy * sector_sin[j_idx];
             let normal = Vec3::new(x, y, z).normalize();
 
             vertices.push(ColoredVertex {

@@ -18,6 +18,7 @@ use crate::{
         texture::Texture,
     },
 };
+use bimap::BiHashMap;
 use glam::{Mat3, Mat4, Vec2, Vec3};
 use gltf::{Gltf, Node, Primitive};
 use kira::{
@@ -25,7 +26,7 @@ use kira::{
 };
 use rapier3d::{
     math::{Point, Vector},
-    prelude::{ColliderBuilder, RigidBodyBuilder},
+    prelude::{ColliderBuilder, ColliderHandle, RigidBodyBuilder, RigidBodyHandle},
 };
 use winit::window::Window;
 
@@ -34,6 +35,7 @@ pub struct Scene {
     pub physics: Physics,
     pub audio: AudioManager,
     pub camera_controller: CameraController,
+    pub objects: BiHashMap<u128, (RigidBodyHandle, ColliderHandle)>,
 }
 
 impl Scene {
@@ -43,6 +45,30 @@ impl Scene {
             physics: Physics::new(),
             audio: AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).unwrap(),
             camera_controller: CameraController::default(),
+            objects: BiHashMap::new(),
+        }
+    }
+
+    pub fn cull_instances_behind_camera(&mut self) {
+        let camera_position = self.renderer.camera.position;
+        let camera_forward = self.renderer.camera.calc_view_dir();
+
+        let mut to_remove = Vec::new();
+
+        for (mesh_id, mesh) in self.renderer.color_pipeline.meshes.iter() {
+            for (instance_index, instance) in mesh.instances.iter().enumerate() {
+                let model = instance.model;
+                let position = glam::Vec3::new(model[3][0], model[3][1], model[3][2]);
+
+                let to_object = position - camera_position;
+                if to_object.dot(camera_forward) < 0.0 {
+                    to_remove.push((*mesh_id, instance_index));
+                }
+            }
+        }
+
+        for (mesh_id, instance_index) in to_remove.into_iter().rev() {
+            self.remove_instance(mesh_id, instance_index);
         }
     }
 
@@ -104,7 +130,7 @@ impl Scene {
         for (name, (positions, indices)) in collider_meshes {
             let instances_list = instances.remove(&name).unwrap();
 
-            for instance in instances_list {
+            for (instance_index, instance) in instances_list.into_iter().enumerate() {
                 let model_matrix = Mat4::from_cols_array_2d(&instance.model);
                 let (scale, rotation, translation) = model_matrix.to_scale_rotation_translation();
                 let angvel = rotation.to_scaled_axis();
@@ -143,11 +169,17 @@ impl Scene {
                     .build();
 
                 let rigid_body_handle = self.physics.bodies.insert(rigid_body);
-                self.physics.colliders.insert_with_parent(
+                let collider_handle = self.physics.colliders.insert_with_parent(
                     collider,
                     rigid_body_handle,
                     &mut self.physics.bodies,
                 );
+
+                let mesh_id = hash_string_to_u64(&name);
+                let id = ((mesh_id as u128) << 64) | (instance_index as u128);
+
+                self.objects
+                    .insert(id, (rigid_body_handle, collider_handle));
 
                 log::info!("RigidBody of {name} created on {translation}");
             }
@@ -320,6 +352,52 @@ impl Scene {
         );
     }
 
+    pub fn remove_instance(&mut self, mesh_id: u64, instance_index: usize) {
+        if let Some(mesh) = self.renderer.color_pipeline.meshes.get_mut(&mesh_id) {
+            let instance_count_before = mesh.instances.len();
+
+            if instance_index >= instance_count_before {
+                return;
+            }
+
+            let last_index = instance_count_before - 1;
+
+            mesh.remove_instance(&self.renderer.device, &self.renderer.queue, instance_index);
+
+            let user_data_removed = ((mesh_id as u128) << 64) | (instance_index as u128);
+
+            if let Some((_, (rigid_body, collider))) =
+                self.objects.remove_by_left(&user_data_removed)
+            {
+                self.physics.colliders.remove(
+                    collider,
+                    &mut self.physics.islands,
+                    &mut self.physics.bodies,
+                    true,
+                );
+                self.physics.bodies.remove(
+                    rigid_body,
+                    &mut self.physics.islands,
+                    &mut self.physics.colliders,
+                    &mut self.physics.impulse_joints,
+                    &mut self.physics.multibody_joints,
+                    true,
+                );
+            }
+
+            if instance_index != last_index {
+                let old_user_data_last = ((mesh_id as u128) << 64) | (last_index as u128);
+                if let Some((_, (rigid_body, a))) = self.objects.remove_by_left(&old_user_data_last)
+                {
+                    if let Some(body) = self.physics.bodies.get_mut(rigid_body) {
+                        body.user_data = user_data_removed;
+                    }
+                    self.objects.insert(user_data_removed, (rigid_body, a));
+                }
+            }
+        }
+    }
+
     pub fn spawn_ball_instance(
         &mut self,
         position: Vec3,
@@ -347,23 +425,16 @@ impl Scene {
             },
         );
 
-        let instance_id = mesh.instance_count as u128 - 1;
+        let instance_id = mesh.instances.len() as u128 - 1;
+        let id = ((mesh_id as u128) << 64) | instance_id;
 
         let velocity = direction * speed;
-        self.physics.create_ball(
-            ((mesh_id as u128) << 64) | instance_id,
-            position,
-            velocity,
-            radius,
-        );
+        self.objects
+            .insert(id, self.physics.create_ball(id, position, velocity, radius));
     }
 
     pub fn update_objects(&mut self) {
         for (_, body) in self.physics.bodies.iter() {
-            // Remove if object leave camera
-
-            // .. todo
-
             // Update dynamic objects
             if body.user_data != 0 {
                 let model = body.position().to_homogeneous().into();
