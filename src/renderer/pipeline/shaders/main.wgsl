@@ -1,14 +1,8 @@
-struct Camera {
-    view_pos: vec4<f32>,
-    view_proj: mat4x4<f32>,
-}
-@group(0) @binding(0) var<uniform> camera: Camera;
-
-struct Light {
-    position: vec3<f32>,
-    color: vec3<f32>,
-}
-@group(1) @binding(0) var<uniform> light: Light;
+import package::{
+    camera_shader::camera,
+    light_shader::{light, light_main},
+    fog_shader::{fog, fog_main, FogValue}
+};
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -31,6 +25,8 @@ struct VertexOutput {
     @location(0) color: vec3<f32>,
     @location(1) world_normal: vec3<f32>,
     @location(2) world_position: vec3<f32>,
+    @location(3) screen_t: f32,
+    @location(4) view_depth: f32,
 };
 
 @vertex
@@ -50,32 +46,25 @@ fn vs_main(
         instance.normal_matrix_2,
     );
     
-    let world_position = (model_matrix * vec4<f32>(model.position, 1.0)).xyz;
     var out: VertexOutput;
-    out.clip_position = camera.view_proj * vec4<f32>(world_position, 1.0);
-    out.color = model.color;
+    out.world_position = (model_matrix * vec4<f32>(model.position, 1.0)).xyz;
+    out.clip_position = camera.view_proj * vec4<f32>(out.world_position, 1.0);
     out.world_normal = normalize(normal_matrix * model.normal);
-    out.world_position = world_position;
+    out.color = model.color;
+    
+    let ndc_pos = out.clip_position.xy / out.clip_position.w;
+    out.screen_t = (ndc_pos.y + 1.0) * 0.5;
+    
+    out.view_depth = distance(out.world_position, camera.view_pos.xyz);
+    
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Ambient
-    let ambient_strength = 0.1;
-    let ambient = ambient_strength * light.color;
+    let fog_value = fog_main(in.screen_t, in.view_depth);
     
-    // Diffuse
-    let light_dir = normalize(light.position - in.world_position);
-    let diffuse_strength = max(dot(in.world_normal, light_dir), 0.0);
-    let diffuse = diffuse_strength * light.color;
-    
-    // Specular (Blinn-Phong)
-    let view_dir = normalize(camera.view_pos.xyz - in.world_position);
-    let halfway_dir = normalize(light_dir + view_dir);
-    let specular_strength = pow(max(dot(in.world_normal, halfway_dir), 0.0), 32.0);
-    let specular = specular_strength * light.color;
-    
-    let result = (ambient + diffuse + specular) * in.color;
-    return vec4<f32>(result, 1.0);
+    let object_color = light_main(in.world_position, in.world_normal) * in.color;
+    let fogged_color = object_color * (1.0 - fog_value.factor) + fog_value.color.rgb * fog_value.factor;
+    return vec4<f32>(fogged_color, 1.0);
 }

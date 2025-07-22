@@ -13,12 +13,17 @@ glam = "0.30"
 gltf = "1.4"
 image = "0.25"
 kira = "0.10"
+litemap = "0.8"
 log = "0.4"
 pollster = "0.4"
 rapier3d = "0.26"
 simple_logger = "5.0"
+wesl = "0.1"
 wgpu = "26.0"
 winit = "0.30"
+
+[build-dependencies]
+wesl = "0.1"
 
 [profile.release]
 lto = true

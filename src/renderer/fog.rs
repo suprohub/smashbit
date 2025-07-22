@@ -2,39 +2,47 @@ use wgpu::util::DeviceExt;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct LightUniform {
-    pub position: [f32; 3],
-    _padding: u32,
-    pub color: [f32; 3],
-    _padding2: u32,
+pub struct FogUniform {
+    pub lower_color: [f32; 4],
+    pub upper_color: [f32; 4],
+    pub density: f32,
+    pub start: f32,
+    _padding: [f32; 2],
 }
 
-pub struct Light {
-    pub uniform: LightUniform,
+impl Default for FogUniform {
+    fn default() -> Self {
+        Self {
+            lower_color: [0.7, 0.1, 0.1, 1.0],
+            upper_color: [0.5, 1.0, 0.1, 1.0],
+            density: 0.05,
+            start: 5.0,
+            _padding: [0.0; 2],
+        }
+    }
+}
+
+pub struct Fog {
+    pub uniform: FogUniform,
     pub buffer: wgpu::Buffer,
     pub bind_layout_entry: wgpu::BindGroupLayoutEntry,
 }
 
-impl Light {
+impl Fog {
     pub fn new(device: &wgpu::Device) -> Self {
-        let light_uniform = LightUniform {
-            position: [2.0, 2.0, 2.0],
-            _padding: 0,
-            color: [1.0, 1.0, 1.0],
-            _padding2: 0,
-        };
+        let uniform = FogUniform::default();
 
-        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Light Buffer"),
-            contents: bytemuck::cast_slice(&[light_uniform]),
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Fog Buffer"),
+            contents: bytemuck::cast_slice(&[uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
         Self {
-            uniform: light_uniform,
-            buffer: light_buffer,
+            uniform,
+            buffer,
             bind_layout_entry: wgpu::BindGroupLayoutEntry {
-                binding: 1,
+                binding: 2,
                 visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,

@@ -7,8 +7,12 @@ use std::sync::Arc;
 use wgpu::Trace;
 use winit::{dpi::PhysicalSize, window::Window};
 
+use crate::renderer::{fog::Fog, pipeline::background::BackgroundPipeline};
+
 pub mod camera;
+pub mod fog;
 pub mod light;
+pub mod mesh;
 pub mod pipeline;
 pub mod texture;
 
@@ -23,11 +27,14 @@ pub struct Renderer {
     pub depth_texture: texture::Texture,
 
     pub camera: Camera,
+    pub light: Light,
+    pub fog: Fog,
 
+    pub background_pipeline: BackgroundPipeline,
     pub color_pipeline: ColorPipeline,
     pub texture_pipeline: TexturePipeline,
 
-    pub light: Light,
+    pub base_bind_group: wgpu::BindGroup,
 }
 
 impl Renderer {
@@ -100,22 +107,51 @@ impl Renderer {
         );
 
         let camera = Camera::new(&device, size.width, size.height);
-
         let light = Light::new(&device);
+        let fog = Fog::new(&device);
+
+        let base_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Base bind group layout"),
+                entries: &[
+                    camera.bind_layout_entry,
+                    light.bind_layout_entry,
+                    fog.bind_layout_entry,
+                ],
+            });
+
+        let base_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Base bind group"),
+            layout: &base_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: light.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: fog.buffer.as_entire_binding(),
+                },
+            ],
+        });
 
         Ok(Self {
-            color_pipeline: ColorPipeline::new(
+            background_pipeline: BackgroundPipeline::new(
                 &device,
                 surface_format,
-                &camera.bind_group_layout,
-                &light.light_bind_group_layout,
+                &base_bind_group_layout,
             ),
+            color_pipeline: ColorPipeline::new(&device, surface_format, &base_bind_group_layout),
             texture_pipeline: TexturePipeline::new(
                 &device,
                 surface_format,
-                &camera.bind_group_layout,
-                &light.light_bind_group_layout,
+                &base_bind_group_layout,
             ),
+            base_bind_group,
             depth_texture,
             camera,
             window,
@@ -124,6 +160,7 @@ impl Renderer {
             device,
             queue,
             light,
+            fog,
         })
     }
 
@@ -182,17 +219,13 @@ impl Renderer {
                 timestamp_writes: None,
             });
 
-            self.color_pipeline.begin_render_pass(
-                &mut render_pass,
-                &self.camera.bind_group,
-                &self.light.light_bind_group,
-            );
+            render_pass.set_bind_group(0, &self.base_bind_group, &[]);
 
-            self.texture_pipeline.begin_render_pass(
-                &mut render_pass,
-                &self.camera.bind_group,
-                &self.light.light_bind_group,
-            );
+            self.background_pipeline.draw(&mut render_pass);
+
+            self.color_pipeline.begin_render_pass(&mut render_pass);
+
+            self.texture_pipeline.begin_render_pass(&mut render_pass);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

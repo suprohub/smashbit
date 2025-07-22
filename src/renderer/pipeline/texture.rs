@@ -1,6 +1,7 @@
-use wgpu::util::DeviceExt;
+use litemap::LiteMap;
+use wgpu::{ShaderModuleDescriptor, ShaderSource, util::DeviceExt};
 
-use crate::renderer::texture;
+use crate::renderer::{mesh::Mesh, texture};
 
 use super::InstanceRaw;
 
@@ -38,48 +39,17 @@ impl TexturedVertex {
     }
 }
 
-pub struct TextureMesh {
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
-    pub index_count: u32,
-    pub instance_buffer: wgpu::Buffer,
-    pub instances_len: u32,
-    pub bind_group: wgpu::BindGroup,
-}
-
-impl TextureMesh {
-    pub fn update_instance(
-        &mut self,
-        queue: &wgpu::Queue,
-        instance_index: usize,
-        new_instance: &InstanceRaw,
-    ) {
-        let offset = (instance_index * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress;
-        queue.write_buffer(
-            &self.instance_buffer,
-            offset,
-            bytemuck::bytes_of(new_instance),
-        );
-    }
-
-    pub fn update_all_instances(&mut self, queue: &wgpu::Queue, instances: &[InstanceRaw]) {
-        self.instances_len = instances.len() as u32;
-        queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
-    }
-}
-
 pub struct TexturePipeline {
-    pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
-    meshes: Vec<TextureMesh>,
+    pub pipeline: wgpu::RenderPipeline,
+    pub bind_group_layout: wgpu::BindGroupLayout,
+    pub meshes: LiteMap<u64, (Mesh, wgpu::BindGroup)>,
 }
 
 impl TexturePipeline {
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-        camera_bind_group_layout: &wgpu::BindGroupLayout,
-        light_bind_group_layout: &wgpu::BindGroupLayout,
+        base_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
@@ -100,18 +70,17 @@ impl TexturePipeline {
                     count: None,
                 },
             ],
-            label: Some("texture_bind_group_layout"),
+            label: Some("Texture bind group layout"),
         });
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/texture.wgsl"));
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("Texture shader"),
+            source: ShaderSource::Wgsl(wesl::include_wesl!("texture").into()),
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Texture Pipeline Layout"),
-            bind_group_layouts: &[
-                &bind_group_layout,
-                camera_bind_group_layout,
-                light_bind_group_layout,
-            ],
+            bind_group_layouts: &[base_bind_group_layout, &bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -162,13 +131,14 @@ impl TexturePipeline {
         Self {
             pipeline,
             bind_group_layout,
-            meshes: Vec::new(),
+            meshes: LiteMap::new(),
         }
     }
 
     pub fn add_mesh(
         &mut self,
         device: &wgpu::Device,
+        id: u64,
         texture: &texture::Texture,
         vertices: &[TexturedVertex],
         indices: &[u16],
@@ -207,40 +177,31 @@ impl TexturePipeline {
             label: Some("texture_bind_group"),
         });
 
-        self.meshes.push(TextureMesh {
-            vertex_buffer,
-            index_buffer,
-            index_count: indices.len() as u32,
-            instance_buffer,
-            instances_len: instances.len() as u32,
-            bind_group,
-        });
+        self.meshes.insert(
+            id,
+            (
+                Mesh {
+                    vertex_buffer,
+                    index_buffer,
+                    index_count: indices.len() as u32,
+                    instance_buffer,
+                    instance_capacity: instances.len() as u32,
+                    instances: instances.to_vec(),
+                },
+                bind_group,
+            ),
+        );
     }
 
-    pub fn mesh_mut(&mut self, mesh_index: usize) -> Option<&mut TextureMesh> {
-        self.meshes.get_mut(mesh_index)
-    }
-
-    pub fn remove_mesh(&mut self, index: usize) -> TextureMesh {
-        self.meshes.remove(index)
-    }
-
-    pub fn begin_render_pass(
-        &self,
-        render_pass: &mut wgpu::RenderPass,
-        camera_bind_group: &wgpu::BindGroup,
-        light_bind_group: &wgpu::BindGroup,
-    ) {
+    pub fn begin_render_pass(&self, render_pass: &mut wgpu::RenderPass) {
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(1, camera_bind_group, &[]);
-        render_pass.set_bind_group(2, light_bind_group, &[]);
 
-        for mesh in &self.meshes {
-            render_pass.set_bind_group(0, &mesh.bind_group, &[]);
+        for (mesh, bind_group) in self.meshes.values() {
+            render_pass.set_bind_group(1, bind_group, &[]);
             render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, mesh.instance_buffer.slice(..));
             render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..mesh.index_count, 0, 0..mesh.instances_len);
+            render_pass.draw_indexed(0..mesh.index_count, 0, 0..mesh.instances.len() as u32);
         }
     }
 }

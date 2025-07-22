@@ -55,7 +55,13 @@ impl Scene {
 
         let mut to_remove = Vec::new();
 
-        for (mesh_id, mesh) in self.renderer.color_pipeline.meshes.iter() {
+        for (mesh_id, mesh) in self.renderer.color_pipeline.meshes.iter().chain(
+            self.renderer
+                .texture_pipeline
+                .meshes
+                .iter()
+                .map(|(id, (mesh, _))| (id, mesh)),
+        ) {
             for (instance_index, instance) in mesh.instances.iter().enumerate() {
                 let model = instance.model;
                 let position = glam::Vec3::new(model[3][0], model[3][1], model[3][2]);
@@ -119,6 +125,7 @@ impl Scene {
 
             self.renderer.texture_pipeline.add_mesh(
                 &self.renderer.device,
+                hash_string_to_u64(&name),
                 &texture,
                 &vertices,
                 &indices,
@@ -353,7 +360,18 @@ impl Scene {
     }
 
     pub fn remove_instance(&mut self, mesh_id: u64, instance_index: usize) {
-        if let Some(mesh) = self.renderer.color_pipeline.meshes.get_mut(&mesh_id) {
+        if let Some(mesh) = self
+            .renderer
+            .color_pipeline
+            .meshes
+            .get_mut(&mesh_id)
+            .or(self
+                .renderer
+                .texture_pipeline
+                .meshes
+                .get_mut(&mesh_id)
+                .map(|(m, _)| m))
+        {
             let instance_count_before = mesh.instances.len();
 
             if instance_index >= instance_count_before {
