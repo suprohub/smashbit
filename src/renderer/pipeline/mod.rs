@@ -1,5 +1,6 @@
 pub mod background;
 pub mod color;
+pub mod hdr;
 pub mod texture;
 
 #[repr(C)]

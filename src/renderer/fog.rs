@@ -13,8 +13,8 @@ pub struct FogUniform {
 impl Default for FogUniform {
     fn default() -> Self {
         Self {
-            lower_color: [0.7, 0.1, 0.1, 1.0],
-            upper_color: [0.5, 1.0, 0.1, 1.0],
+            lower_color: [1.0, 0.294, 0.361, 1.0],
+            upper_color: [1.0, 0.765, 0.443, 1.0],
             density: 0.05,
             start: 5.0,
             _padding: [0.0; 2],

@@ -1,5 +1,8 @@
 
-import package::{camera_shader::camera, light_shader::{light, light_main}};
+import package::{
+    camera_shader::camera,
+    light_shader::{light, light_main}
+};
 
 struct VertexInput {
     @location(0) position: vec3<f32>,

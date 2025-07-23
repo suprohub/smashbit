@@ -66,7 +66,7 @@ impl BackgroundPipeline {
         Self { pipeline }
     }
 
-    pub fn draw(&self, render_pass: &mut wgpu::RenderPass) {
+    pub fn begin_render_pass(&self, render_pass: &mut wgpu::RenderPass) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.draw(0..3, 0..1);
     }

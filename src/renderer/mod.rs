@@ -7,7 +7,10 @@ use std::sync::Arc;
 use wgpu::Trace;
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::renderer::{fog::Fog, pipeline::background::BackgroundPipeline};
+use crate::renderer::{
+    fog::Fog,
+    pipeline::{background::BackgroundPipeline, hdr::HdrPipeline},
+};
 
 pub mod camera;
 pub mod fog;
@@ -31,6 +34,7 @@ pub struct Renderer {
     pub fog: Fog,
 
     pub background_pipeline: BackgroundPipeline,
+    pub hdr_pipeline: HdrPipeline,
     pub color_pipeline: ColorPipeline,
     pub texture_pipeline: TexturePipeline,
 
@@ -139,18 +143,25 @@ impl Renderer {
             ],
         });
 
+        let hdr_pipeline = HdrPipeline::new(&device, &surface_config, &base_bind_group_layout);
+
         Ok(Self {
             background_pipeline: BackgroundPipeline::new(
                 &device,
-                surface_format,
+                hdr_pipeline.format(),
                 &base_bind_group_layout,
             ),
-            color_pipeline: ColorPipeline::new(&device, surface_format, &base_bind_group_layout),
+            color_pipeline: ColorPipeline::new(
+                &device,
+                hdr_pipeline.format(),
+                &base_bind_group_layout,
+            ),
             texture_pipeline: TexturePipeline::new(
                 &device,
-                surface_format,
+                hdr_pipeline.format(),
                 &base_bind_group_layout,
             ),
+            hdr_pipeline,
             base_bind_group,
             depth_texture,
             camera,
@@ -166,6 +177,8 @@ impl Renderer {
 
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         log::info!("Resizing window");
+        self.hdr_pipeline
+            .resize(&self.device, new_size.width, new_size.height);
         self.camera.resize(new_size.width, new_size.height);
         (self.surface_config.width, self.surface_config.height) = (new_size.width, new_size.height);
         self.surface.configure(&self.device, &self.surface_config);
@@ -194,7 +207,7 @@ impl Renderer {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: self.hdr_pipeline.view(),
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -221,12 +234,13 @@ impl Renderer {
 
             render_pass.set_bind_group(0, &self.base_bind_group, &[]);
 
-            self.background_pipeline.draw(&mut render_pass);
-
+            self.background_pipeline.begin_render_pass(&mut render_pass);
             self.color_pipeline.begin_render_pass(&mut render_pass);
-
             self.texture_pipeline.begin_render_pass(&mut render_pass);
         }
+
+        self.hdr_pipeline
+            .process(&mut encoder, &view, &self.base_bind_group);
 
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
