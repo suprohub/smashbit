@@ -64,7 +64,7 @@ impl ApplicationHandler for Game {
                     }
                 }
                 WindowEvent::Resized(new_size) => {
-                    scene.renderer.resize(new_size);
+                    scene.renderer.resize(&new_size);
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
                     if let PhysicalKey::Code(keycode) = event.physical_key {
@@ -88,8 +88,8 @@ impl ApplicationHandler for Game {
 
                     if MouseButton::Left == button && state.is_pressed() {
                         scene.spawn_ball_instance(
-                            scene.renderer.camera.position,
-                            scene.renderer.camera.calc_view_dir(),
+                            scene.renderer.uniforms.camera.position,
+                            scene.renderer.uniforms.camera.calc_view_dir(),
                             15.0,
                             0.5,
                         );
@@ -123,7 +123,7 @@ impl ApplicationHandler for Game {
 
             scene
                 .camera_controller
-                .update_camera(&mut scene.renderer.camera, dt);
+                .update_camera(&mut scene.renderer.uniforms.camera, dt);
             scene
                 .physics
                 .step(dt.as_secs_f32(), self.target_physics_ps, 1.0, 1);

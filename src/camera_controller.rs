@@ -8,7 +8,7 @@ use winit::{
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
 
-use crate::renderer::camera::Camera;
+use crate::renderer::uniform::camera::Camera;
 
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 

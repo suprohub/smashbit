@@ -1,5 +1,5 @@
 
-import package::camera_shader::camera;
+import package::uniform::camera_shader::camera;
 
 struct Light {
     position: vec3<f32>,

@@ -1,3 +1,10 @@
+use winit::dpi::PhysicalSize;
+
+use crate::renderer::pipeline::{
+    background::BackgroundPipeline, color::ColorPipeline, hdr::HdrPipeline,
+    texture::TexturePipeline,
+};
+
 pub mod background;
 pub mod color;
 pub mod hdr;
@@ -54,5 +61,51 @@ impl InstanceRaw {
                 },
             ],
         }
+    }
+}
+
+pub struct Pipelines {
+    pub hdr_pipeline: HdrPipeline,
+    pub background_pipeline: BackgroundPipeline,
+    pub color_pipeline: ColorPipeline,
+    pub texture_pipeline: TexturePipeline,
+}
+
+impl Pipelines {
+    pub fn new(
+        device: &wgpu::Device,
+        size: &PhysicalSize<u32>,
+        base_bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> Self {
+        let hdr_pipeline = HdrPipeline::new(device, size, base_bind_group_layout);
+        Self {
+            background_pipeline: BackgroundPipeline::new(
+                device,
+                hdr_pipeline.format(),
+                base_bind_group_layout,
+            ),
+            color_pipeline: ColorPipeline::new(
+                device,
+                hdr_pipeline.format(),
+                base_bind_group_layout,
+            ),
+            texture_pipeline: TexturePipeline::new(
+                device,
+                hdr_pipeline.format(),
+                base_bind_group_layout,
+            ),
+            hdr_pipeline,
+        }
+    }
+
+    pub fn resize(&mut self, device: &wgpu::Device, size: &PhysicalSize<u32>) {
+        self.hdr_pipeline.resize(device, size.width, size.height);
+    }
+
+    pub fn begin_render_pass(&self, pass: &mut wgpu::RenderPass) {
+        self.background_pipeline.begin_render_pass(pass);
+
+        self.color_pipeline.begin_render_pass(pass);
+        self.texture_pipeline.begin_render_pass(pass);
     }
 }

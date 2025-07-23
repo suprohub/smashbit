@@ -50,13 +50,14 @@ impl Scene {
     }
 
     pub fn cull_instances_behind_camera(&mut self) {
-        let camera_position = self.renderer.camera.position;
-        let camera_forward = self.renderer.camera.calc_view_dir();
+        let camera_position = self.renderer.uniforms.camera.position;
+        let camera_forward = self.renderer.uniforms.camera.calc_view_dir();
 
         let mut to_remove = Vec::new();
 
-        for (mesh_id, mesh) in self.renderer.color_pipeline.meshes.iter().chain(
+        for (mesh_id, mesh) in self.renderer.pipelines.color_pipeline.meshes.iter().chain(
             self.renderer
+                .pipelines
                 .texture_pipeline
                 .meshes
                 .iter()
@@ -105,7 +106,7 @@ impl Scene {
 
         log::info!("Processing meshes");
         for (name, (vertices, indices, _base_color)) in colored_meshes {
-            self.renderer.color_pipeline.add_mesh(
+            self.renderer.pipelines.color_pipeline.add_mesh(
                 &self.renderer.device,
                 hash_string_to_u64(&name),
                 &vertices,
@@ -123,7 +124,7 @@ impl Scene {
             )
             .unwrap();
 
-            self.renderer.texture_pipeline.add_mesh(
+            self.renderer.pipelines.texture_pipeline.add_mesh(
                 &self.renderer.device,
                 hash_string_to_u64(&name),
                 &texture,
@@ -347,7 +348,7 @@ impl Scene {
 
     pub fn init_ball(&mut self) {
         let (vertices, indices) = generate_sphere(0.5, 16, 16, [1.0, 0.0, 0.0]);
-        self.renderer.color_pipeline.add_mesh(
+        self.renderer.pipelines.color_pipeline.add_mesh(
             &self.renderer.device,
             hash_string_to_u64("ball"),
             &vertices,
@@ -362,11 +363,13 @@ impl Scene {
     pub fn remove_instance(&mut self, mesh_id: u64, instance_index: usize) {
         if let Some(mesh) = self
             .renderer
+            .pipelines
             .color_pipeline
             .meshes
             .get_mut(&mesh_id)
             .or(self
                 .renderer
+                .pipelines
                 .texture_pipeline
                 .meshes
                 .get_mut(&mesh_id)
@@ -426,6 +429,7 @@ impl Scene {
         let mesh_id = hash_string_to_u64("ball");
         let mesh = self
             .renderer
+            .pipelines
             .color_pipeline
             .meshes
             .get_mut(&mesh_id)
@@ -462,6 +466,7 @@ impl Scene {
                     .to_cols_array_2d();
 
                 self.renderer
+                    .pipelines
                     .color_pipeline
                     .meshes
                     .get_mut(&((body.user_data >> 64) as u64))

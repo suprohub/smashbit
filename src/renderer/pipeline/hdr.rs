@@ -1,4 +1,6 @@
-use crate::renderer::{pipeline::color::ColoredVertex, texture};
+use winit::dpi::PhysicalSize;
+
+use crate::renderer::texture;
 
 pub struct HdrPipeline {
     pub pipeline: wgpu::RenderPipeline,
@@ -13,11 +15,10 @@ pub struct HdrPipeline {
 impl HdrPipeline {
     pub fn new(
         device: &wgpu::Device,
-        config: &wgpu::SurfaceConfiguration,
+        size: &PhysicalSize<u32>,
         base_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let width = config.width;
-        let height = config.height;
+        let (width, height) = (size.width, size.height);
 
         // We could use `Rgba32Float`, but that requires some extra
         // features to be enabled for rendering.
@@ -95,7 +96,7 @@ impl HdrPipeline {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format.add_srgb_suffix(),
+                    format: format.add_srgb_suffix(),
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],

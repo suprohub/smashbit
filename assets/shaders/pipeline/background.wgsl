@@ -1,4 +1,4 @@
-import package::{
+import package::uniform::{
     camera_shader::camera,
     fog_shader::{fog, fog_main}
 };

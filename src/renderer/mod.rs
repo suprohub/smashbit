@@ -1,23 +1,15 @@
 use anyhow::Result;
-use camera::Camera;
 use glam::Vec3;
-use light::Light;
-use pipeline::{color::ColorPipeline, texture::TexturePipeline};
 use std::sync::Arc;
 use wgpu::Trace;
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::renderer::{
-    fog::Fog,
-    pipeline::{background::BackgroundPipeline, hdr::HdrPipeline},
-};
+use crate::renderer::{pipeline::Pipelines, uniform::Uniforms};
 
-pub mod camera;
-pub mod fog;
-pub mod light;
 pub mod mesh;
 pub mod pipeline;
 pub mod texture;
+pub mod uniform;
 
 pub struct Renderer {
     pub window: Arc<Window>,
@@ -29,16 +21,8 @@ pub struct Renderer {
 
     pub depth_texture: texture::Texture,
 
-    pub camera: Camera,
-    pub light: Light,
-    pub fog: Fog,
-
-    pub background_pipeline: BackgroundPipeline,
-    pub hdr_pipeline: HdrPipeline,
-    pub color_pipeline: ColorPipeline,
-    pub texture_pipeline: TexturePipeline,
-
-    pub base_bind_group: wgpu::BindGroup,
+    pub uniforms: Uniforms,
+    pub pipelines: Pipelines,
 }
 
 impl Renderer {
@@ -110,76 +94,24 @@ impl Renderer {
             "depth_texture",
         );
 
-        let camera = Camera::new(&device, size.width, size.height);
-        let light = Light::new(&device);
-        let fog = Fog::new(&device);
-
-        let base_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Base bind group layout"),
-                entries: &[
-                    camera.bind_layout_entry,
-                    light.bind_layout_entry,
-                    fog.bind_layout_entry,
-                ],
-            });
-
-        let base_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Base bind group"),
-            layout: &base_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera.buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: light.buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: fog.buffer.as_entire_binding(),
-                },
-            ],
-        });
-
-        let hdr_pipeline = HdrPipeline::new(&device, &surface_config, &base_bind_group_layout);
+        let uniforms = Uniforms::new(&device, &size);
 
         Ok(Self {
-            background_pipeline: BackgroundPipeline::new(
-                &device,
-                hdr_pipeline.format(),
-                &base_bind_group_layout,
-            ),
-            color_pipeline: ColorPipeline::new(
-                &device,
-                hdr_pipeline.format(),
-                &base_bind_group_layout,
-            ),
-            texture_pipeline: TexturePipeline::new(
-                &device,
-                hdr_pipeline.format(),
-                &base_bind_group_layout,
-            ),
-            hdr_pipeline,
-            base_bind_group,
+            pipelines: Pipelines::new(&device, &size, &uniforms.bind_group_layout),
+            uniforms,
             depth_texture,
-            camera,
             window,
             surface,
             surface_config,
             device,
             queue,
-            light,
-            fog,
         })
     }
 
-    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
+    pub fn resize(&mut self, new_size: &PhysicalSize<u32>) {
         log::info!("Resizing window");
-        self.hdr_pipeline
-            .resize(&self.device, new_size.width, new_size.height);
-        self.camera.resize(new_size.width, new_size.height);
+        self.pipelines.resize(&self.device, new_size);
+        self.uniforms.resize(new_size);
         (self.surface_config.width, self.surface_config.height) = (new_size.width, new_size.height);
         self.surface.configure(&self.device, &self.surface_config);
 
@@ -192,7 +124,8 @@ impl Renderer {
     }
 
     pub fn render(&self) -> Result<()> {
-        self.camera.update(&self.queue);
+        self.uniforms.update(&self.queue);
+
         let frame = self.surface.get_current_texture()?;
         let view = frame
             .texture
@@ -207,7 +140,7 @@ impl Renderer {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: self.hdr_pipeline.view(),
+                    view: self.pipelines.hdr_pipeline.view(),
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -232,15 +165,13 @@ impl Renderer {
                 timestamp_writes: None,
             });
 
-            render_pass.set_bind_group(0, &self.base_bind_group, &[]);
-
-            self.background_pipeline.begin_render_pass(&mut render_pass);
-            self.color_pipeline.begin_render_pass(&mut render_pass);
-            self.texture_pipeline.begin_render_pass(&mut render_pass);
+            render_pass.set_bind_group(0, &self.uniforms.bind_group, &[]);
+            self.pipelines.begin_render_pass(&mut render_pass);
         }
 
-        self.hdr_pipeline
-            .process(&mut encoder, &view, &self.base_bind_group);
+        self.pipelines
+            .hdr_pipeline
+            .process(&mut encoder, &view, &self.uniforms.bind_group);
 
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
